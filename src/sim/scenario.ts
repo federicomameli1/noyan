@@ -101,6 +101,8 @@ const LINKS: [string, string, LinkKind][] = [
 
 const sites: Site[] = SITES.map(([id, name, kind, lon, lat, terrain, control, water = true]) => ({ id, name, kind, lon, lat, terrain, control, water }));
 
+export interface ColumnSpec { name: string; men: number; horsesPerMan: number; rationsPerMan: number; condition: number }
+
 export const SCENARIO = {
   name: "Into Shanxi, 1218",
   graph: buildGraph(sites, LINKS),
@@ -109,6 +111,15 @@ export const SCENARIO = {
   base: "datong",
   objective: "taiyuan",
   column: { name: "Muqali", men: 3000, horsesPerMan: 4, rationsPerMan: 20, condition: 85 },
+  /** columns the khan sends during the campaign: they appear at a site on a date [S] */
+  reinforcements: [
+    {
+      date: { year: 1218, month: 10, day: 1, hour: 0 },
+      at: "datong",
+      column: { name: "Uyar", men: 2000, horsesPerMan: 3, rationsPerMan: 15, condition: 75 },
+      message: "A rider from the khan: Uyar's Khitan horsemen reach Datong, 2,000 men.",
+    },
+  ] as { date: GameDate; at: string; column: ColumnSpec; message: string }[],
   /** Jin strongholds that can be besieged: type, garrison, stores in days, and walls when they differ from the type [S] */
   cities: {
     daizhou: { type: "town", garrison: 1000, stores: 40 },

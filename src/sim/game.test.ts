@@ -154,10 +154,10 @@ describe("sieges", () => {
 
   it("Taiyuan takes about 11 weeks without engineers and half with them", () => {
     const s = at("taiyuan");
-    expect(siegeDays(col(s), s.cities.taiyuan)).toBeGreaterThanOrEqual(75);
-    expect(siegeDays(col(s), s.cities.taiyuan)).toBeLessThanOrEqual(80);
+    expect(siegeDays(s, col(s), "taiyuan")).toBeGreaterThanOrEqual(75);
+    expect(siegeDays(s, col(s), "taiyuan")).toBeLessThanOrEqual(80);
     col(s).engineers = true;
-    expect(siegeDays(col(s), s.cities.taiyuan)).toBeLessThanOrEqual(40);
+    expect(siegeDays(s, col(s), "taiyuan")).toBeLessThanOrEqual(40);
   });
 
   it("a walled city takes longer and yields engineers", () => {
@@ -296,6 +296,45 @@ describe("forecasts", () => {
     const f = forecast(s, 0, null, 5)!;
     expect(f.arrival).toBeNull();
     expect(f.days).toHaveLength(5);
+  });
+});
+
+describe("several columns", () => {
+  it("the khan's reinforcements reach Datong on 1 November", () => {
+    const s = newGame();
+    days(s, 60);
+    expect(s.columns).toHaveLength(1);
+    days(s, 1);
+    expect(s.columns).toHaveLength(2);
+    expect(s.columns[1]).toMatchObject({ name: "Uyar", men: 2000, at: "datong" });
+    expect(s.log.at(-1)!.kind).toBe("arrival");
+  });
+
+  it("two columns besieging a city take it sooner, and its stores last as long", () => {
+    const s = fed("normal", 0, "xinzhou");
+    const alone = siegeDays(s, col(s), "xinzhou");
+    s.columns.push(JSON.parse(JSON.stringify(col(s))));
+    s.columns[1].name = "Second";
+    orderSiege(s, 0);
+    expect(siegeDays(s, s.columns[1], "xinzhou")).toBeLessThan(alone);
+    orderSiege(s, 1);
+    const stores = s.cities.xinzhou.stores;
+    days(s, 1);
+    expect(s.cities.xinzhou.stores).toBe(stores - 1);
+    days(s, alone);
+    expect(s.cities.xinzhou.taken).toBe(true);
+    expect(s.columns.every(c => c.siege === null)).toBe(true);
+  });
+
+  it("the campaign goes on while the army as a whole has men", () => {
+    const s = newGame();
+    s.columns.push(JSON.parse(JSON.stringify(col(s))));
+    col(s).men = 500;
+    days(s, 1);
+    expect(s.over).toBe(false);
+    s.columns[1].men = 400;
+    days(s, 1);
+    expect(s.result).toBe("defeat");
   });
 });
 

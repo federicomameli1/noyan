@@ -5,7 +5,7 @@
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
-import { SCENARIO } from "./scenario";
+import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export interface Leg {
   from: string;
@@ -105,6 +105,8 @@ export interface GameState {
   sites: Record<string, SiteState>;
   cities: Record<string, CityState>;
   log: LogEntry[];
+  /** reinforcements from the scenario already arrived */
+  arrived: number;
   over: boolean;
   result: "victory" | "defeat" | null;
 }
@@ -115,14 +117,19 @@ export const conditionBand = (c: number): ConditionBand => (c >= 70 ? "fat" : c 
 const graph: Graph = SCENARIO.graph;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-export function newGame(sheep = 0): GameState {
-  const c = SCENARIO.column;
+function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
-    condition: c.condition, fatigue: 0, pace: "normal", at: SCENARIO.base, cameFrom: null, leg: null, route: [], halted: false,
+    condition: c.condition, fatigue: 0, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false,
     today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
+  return col;
+}
+
+export function newGame(sheep = 0): GameState {
+  const c = SCENARIO.column;
+  const col = newColumn(c, SCENARIO.base, sheep);
   const sites: Record<string, SiteState> = {};
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0 };
   const cities: Record<string, CityState> = {};
@@ -130,7 +137,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], sites, cities, over: false, result: null,
+    hour: 0, columns: [col], sites, cities, arrived: 0, over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring.` }],
   };
 }
@@ -337,8 +344,11 @@ export function siegeRate(c: Column, city: CityState): number {
 }
 
 /** Days until the city falls if the siege goes on as now: by progress or by hunger, whichever comes first. */
-export function siegeDays(c: Column, city: CityState): number {
-  return Math.min(Math.ceil((100 - city.progress) / siegeRate(c, city)), Math.ceil(city.stores));
+/** Days until the city falls if this column besieges it, together with the other columns already there. */
+export function siegeDays(s: GameState, c: Column, id: string): number {
+  const city = s.cities[id];
+  const rate = s.columns.reduce((r, o) => r + (o !== c && o.siege === id ? siegeRate(o, city) : 0), siegeRate(c, city));
+  return Math.min(Math.ceil((100 - city.progress) / rate), Math.ceil(city.stores));
 }
 
 /** Men a storm would cost now. */
@@ -398,7 +408,7 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   const got = spoils(c, city, stormed);
   city.taken = true;
   city.stores = 0;
-  c.siege = null;
+  for (const o of s.columns) if (o.siege === id) o.siege = null;
   c.rations += got.rations;
   c.grain = Math.max(c.grain, got.grain);
   c.men += got.recruits;
@@ -417,11 +427,11 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
 
 function checkEnd(s: GameState) {
   if (s.over) return;
-  const c = s.columns[0];
-  if (c.men < R.DEFEAT_MEN) {
+  const men = s.columns.reduce((n, c) => n + c.men, 0);
+  if (men < R.DEFEAT_MEN) {
     s.result = "defeat";
     s.over = true;
-    log(s, `Defeat: ${c.name} has fewer than ${R.DEFEAT_MEN.toLocaleString("en")} men and can no longer campaign.`, "alert");
+    log(s, `Defeat: the army has fewer than ${R.DEFEAT_MEN.toLocaleString("en")} men and can no longer campaign.`, "alert");
   } else if (s.hour >= totalHours()) {
     s.result = "defeat";
     s.over = true;
@@ -472,6 +482,12 @@ export function step(s: GameState) {
   for (const c of s.columns) stepColumn(s, c, hourOfDay);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
+  const next = SCENARIO.reinforcements[s.arrived];
+  if (next && s.hour >= daysBetween(SCENARIO.start, next.date) * 24) {
+    s.columns.push(newColumn(next.column, next.at));
+    s.arrived++;
+    log(s, next.message, "arrival");
+  }
   checkEnd(s);
 }
 
@@ -561,7 +577,8 @@ function endOfDay(s: GameState) {
     if (c.siege) {
       const city = s.cities[c.siege];
       city.progress = Math.min(100, city.progress + siegeRate(c, city));
-      city.stores = Math.max(0, city.stores - 1);
+      // the city eats once a day, however many columns surround it
+      if (s.columns.find(o => o.siege === c.siege) === c) city.stores = Math.max(0, city.stores - 1);
       if (city.progress >= 100 || city.stores <= 0) capture(s, c, c.siege);
       if (s.over) return;
     }
