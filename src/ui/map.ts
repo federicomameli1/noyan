@@ -20,6 +20,8 @@ export interface MapOptions {
   /** movement graph of the scenario, drawn over the map */
   graph?: Graph;
   onSelectSite?: (s: Site) => void;
+  /** pointer entering (site) or leaving (null) a site */
+  onHoverSite?: (s: Site | null) => void;
 }
 
 export interface GameMap {
@@ -30,6 +32,8 @@ export interface GameMap {
   placeColumn(lon: number, lat: number): void;
   /** draws the planned route, as (lon, lat) points; empty to clear it */
   setRoute(points: readonly (readonly [number, number])[]): void;
+  /** draws a possible route, fainter than the planned one; empty to clear it */
+  setPreview(points: readonly (readonly [number, number])[]): void;
   /** highlights a site of the graph, or none */
   selectSite(id: string | null): void;
   /** zooms onto a (lon, lat) box */
@@ -88,7 +92,7 @@ export function createMap(opts: MapOptions): GameMap {
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const j = (a: number) => (rnd() - 0.5) * a;
 
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Hand-drawn map of northern China in 1217" });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Hand-drawn map of northern China in 1218" });
   stage.prepend(svg);
   const C = cssVar;
   const land = GEO.land.join("");
@@ -200,17 +204,18 @@ export function createMap(opts: MapOptions): GameMap {
     }
     return d;
   }
-  const roadG = el("g", { fill: "none", stroke: C("--road"), "stroke-width": 1.5, "stroke-dasharray": "5 3.5", "stroke-linecap": "round", "stroke-opacity": 0.85, "pointer-events": "none", filter: "url(#wobble)" }, world);
+  const roadG = el("g", { class: "fixed-stroke", fill: "none", stroke: C("--road"), "stroke-width": 1.4, "stroke-dasharray": "5 4", "stroke-linecap": "round", "stroke-opacity": 0.55, "pointer-events": "none", filter: "url(#wobble)" }, world);
   roads.forEach(r => el("path", { d: smooth(r) }, roadG));
 
   // movement graph: links and route, under passes and cities
   const graph = opts.graph;
-  const linkG = el("g", { fill: "none", stroke: ink, "stroke-linecap": "round", "pointer-events": "none", "stroke-opacity": 0.55 }, world);
+  const linkG = el("g", { class: "fixed-stroke", fill: "none", stroke: ink, "stroke-linecap": "round", "pointer-events": "none", "stroke-opacity": 0.55 }, world);
   graph?.links.forEach(l => {
     const [ax, ay] = project(graph.site(l.a).lon, graph.site(l.a).lat), [bx, by] = project(graph.site(l.b).lon, graph.site(l.b).lat);
-    el("path", { d: `M${ax.toFixed(1)},${ay.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`, "stroke-width": l.kind === "road" ? 0.9 : 0.7, "stroke-dasharray": l.kind === "road" ? "" : l.kind === "track" ? "3 2" : "1 2" }, linkG);
+    el("path", { d: `M${ax.toFixed(1)},${ay.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`, "stroke-width": l.kind === "road" ? 1.6 : 1.3, "stroke-dasharray": l.kind === "road" ? "" : l.kind === "track" ? "6 4" : "1.5 4" }, linkG);
   });
-  const routePath = el("path", { fill: "none", stroke: C("--label"), "stroke-width": 2.2, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "6 3", "pointer-events": "none" }, world);
+  const previewPath = el("path", { class: "fixed-stroke", fill: "none", stroke: C("--label"), "stroke-width": 3, "stroke-opacity": 0.4, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "3 5", "pointer-events": "none" }, world);
+  const routePath = el("path", { class: "fixed-stroke", fill: "none", stroke: C("--label"), "stroke-width": 3.5, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "9 5", "pointer-events": "none" }, world);
 
   // labels: collected here and then arranged by layoutLabels() to avoid overlaps
   type Candidate = [number, number, string];
@@ -284,9 +289,9 @@ export function createMap(opts: MapOptions): GameMap {
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
     const show = (e: PointerEvent) => { if (!drag) showTip(site.name, e); };
-    g.addEventListener("pointerenter", show);
+    g.addEventListener("pointerenter", e => { show(e); if (!drag) opts.onHoverSite?.(site); });
     g.addEventListener("pointermove", show);
-    g.addEventListener("pointerleave", () => { tip.hidden = true; });
+    g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
     g.addEventListener("click", pick);
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
@@ -311,7 +316,7 @@ export function createMap(opts: MapOptions): GameMap {
     const hit = (a: Box, b: Box) => !(a.x + a.width + pad < b.x || b.x + b.width + pad < a.x || a.y + a.height + pad < b.y || b.y + b.height + pad < a.y);
     const area = (a: Box, b: Box) =>
       Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-    const ls = Math.pow(vb.w / W, 0.75);
+    const ls = labelScale();
     [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
       let best: [number, number, string, Box] | null = null, bestCost = Infinity;
       for (const [cx, cy, anc] of L.cands) {
@@ -345,7 +350,7 @@ export function createMap(opts: MapOptions): GameMap {
   // Muqali's column
   const column = el("g", { "pointer-events": "none" }, world);
   el("g", {}, column).innerHTML = helmet();
-  el("text", { x: 19, y: -12, class: "city", style: "font-weight:600" }, column).textContent = "Muqali";
+  el("text", { x: 17, y: -10, class: "city", style: "font-weight:600;font-size:15px;stroke-width:3px" }, column).textContent = "Muqali";
 
   // paper: grain, stains and darkened edges on top of everything
   el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, filter: "url(#blotch)", "pointer-events": "none", style: "mix-blend-mode:multiply" }, world);
@@ -373,21 +378,33 @@ export function createMap(opts: MapOptions): GameMap {
     opts.onSelectRegion?.(r);
   }
 
-  // zoom and panning
+  // zoom and panning. The view follows the shape of the stage, so the map can fill the screen.
+  let aspect = stage.clientWidth && stage.clientHeight ? stage.clientHeight / stage.clientWidth : H / W;
+  const maxW = () => Math.min(W, H / aspect);
   let vb = { x: 0, y: 0, w: W, h: H };
+  clampVB();
+  /** svg units per screen pixel: labels and symbols are scaled by it to keep a steady size on screen */
+  const labelScale = () => vb.w / (stage.clientWidth || W);
+  let columnAt: Point | null = null;
+  function drawColumn() {
+    if (!columnAt) return;
+    const [x, y] = columnAt;
+    column.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1.2, Math.max(0.4, labelScale()))})`);
+  }
   let drag: { x: number; y: number; vx: number; vy: number } | null = null, moved = false;
   // labels shrink when zooming in, so they stay readable without covering the map
   let relayout = 0;
   const setVB = () => {
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-    const ls = Math.pow(vb.w / W, 0.75);
+    const ls = labelScale();
     svg.style.setProperty("--ls", String(ls));
-    for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${Math.max(0.5, ls)}) translate(${-x},${-y})`);
+    for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, ls))}) translate(${-x},${-y})`);
+    drawColumn();
     clearTimeout(relayout);
     relayout = window.setTimeout(layoutLabels, 150);
   };
   function clampVB() {
-    vb.w = Math.min(W, Math.max(W / 6, vb.w)); vb.h = (vb.w * H) / W;
+    vb.w = Math.min(maxW(), Math.max(W / 8, vb.w)); vb.h = vb.w * aspect;
     vb.x = Math.min(W - vb.w, Math.max(0, vb.x)); vb.y = Math.min(H - vb.h, Math.max(0, vb.y));
   }
   function zoomAt(f: number, cx: number, cy: number) {
@@ -412,6 +429,18 @@ export function createMap(opts: MapOptions): GameMap {
   });
   window.addEventListener("pointerup", () => { drag = null; svg.classList.remove("drag"); setTimeout(() => (moved = false), 0); });
 
+  // follow the size of the stage, keeping the centre of the view
+  new ResizeObserver(() => {
+    const r = stage.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
+    aspect = r.height / r.width;
+    vb.h = vb.w * aspect;
+    clampVB();
+    vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
+    clampVB(); setVB();
+  }).observe(stage);
+
   paint();
   layoutLabels();
   // the map fonts arrive after the first draw: once they are ready, lay out the labels again
@@ -423,8 +452,11 @@ export function createMap(opts: MapOptions): GameMap {
   return {
     setLayer(l) { layer = l; paint(); },
     zoom(f) { zoomAt(f, vb.x + vb.w / 2, vb.y + vb.h / 2); },
-    resetView() { vb = { x: 0, y: 0, w: W, h: H }; setVB(); },
-    placeColumn(lon, lat) { const [x, y] = project(lon, lat); column.setAttribute("transform", `translate(${x},${y}) scale(${Math.max(0.55, Math.pow(vb.w / W, 0.45))})`); },
+    resetView() { vb = { x: 0, y: 0, w: W, h: H }; clampVB(); vb.x = (W - vb.w) / 2; vb.y = (H - vb.h) / 2; setVB(); },
+    placeColumn(lon, lat) { columnAt = project(lon, lat); drawColumn(); },
+    setPreview(points) {
+      previewPath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
+    },
     setRoute(points) {
       routePath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
     },
@@ -435,7 +467,7 @@ export function createMap(opts: MapOptions): GameMap {
     },
     focus(lon0, lat0, lon1, lat1) {
       const [x0, y0] = project(lon0, lat1), [x1, y1] = project(lon1, lat0);
-      const w = Math.max(x1 - x0, ((y1 - y0) * W) / H), h = (w * H) / W;
+      const w = Math.max(x1 - x0, (y1 - y0) / aspect), h = w * aspect;
       vb = { x: (x0 + x1 - w) / 2, y: (y0 + y1 - h) / 2, w, h };
       clampVB(); setVB();
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropFlock, effectivePace, newGame, orderHalt, orderMarch, setPace, step, takeFlock, type GameState } from "./game";
+import { dropFlock, effectivePace, newGame, orderHalt, orderMarch, planRoute, setPace, step, takeFlock, type GameState } from "./game";
 import { RATIONS_PER_SHEEP, type PaceId } from "./constants";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
@@ -63,6 +63,16 @@ describe("marching", () => {
     expect(col(two).fatigue).toBeGreaterThan(col(four).fatigue * 1.3);
   });
 
+  it("estimates the days of a route close to what the march takes", () => {
+    const s = fed("normal");
+    const plan = planRoute(col(s), "taiyuan")!;
+    expect(plan.sites.at(-1)).toBe("taiyuan");
+    orderMarch(s, 0, "taiyuan");
+    let hours = 0;
+    while (col(s).at !== "taiyuan") { step(s); hours++; }
+    expect(Math.abs(plan.days - hours / 24)).toBeLessThan(1);
+  });
+
   it("halts halfway along a link and can turn back", () => {
     const s = fed("normal");
     orderMarch(s, 0, "huairen");
@@ -71,6 +81,7 @@ describe("marching", () => {
     const done = col(s).leg!.done;
     days(s, 1);
     expect(col(s).leg!.done).toBe(done);
+    expect(planRoute(col(s), "datong")!.turnBack).toBe(true);
     orderMarch(s, 0, "datong");
     days(s, 1);
     expect(col(s).at).toBe("datong");

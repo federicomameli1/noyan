@@ -14,7 +14,7 @@ Muqali's column (3,000 men, 4 horses each) starts at Datong on 1 September 1218 
 - Sheep are food on the hoof, but a column with a flock moves at the grazing pace. Flocks can be left at a place and picked up later.
 - A column standing still eats the grass around its camp: a long winter stop in the plain wears the horses down.
 
-At 1x a game day lasts 8 seconds. Every number of the rules is in `src/sim/constants.ts`, tagged as documented, modern estimate or game estimate.
+The map fills the screen. Hover a place to see the route and how many days it takes, click it to march there. The game pauses by itself when the column arrives or something goes wrong (thin horses, food running out). Space pauses, 1 2 3 set the speed. At 1x a game day lasts 8 seconds. Every number of the rules is in `src/sim/constants.ts`, tagged as documented, modern estimate or game estimate.
 
 ## Running locally
 
