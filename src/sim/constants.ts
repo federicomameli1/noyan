@@ -88,3 +88,19 @@ export const RATIONS_PER_SHEEP = 12; // [S] 15-20 kg of meat
 export const RATIONS_PER_HORSE = 100; // [S] at full condition, half when starving
 export const SHEEP_GRAZE_KG = 1.5; // [R] about a quarter of a horse
 export const STARVATION_LOSS = 0.01; // [S] men lost per day without food
+
+// --- cities and sieges ---
+/** siege progress per day, out of 100: SIEGE_RATE x (men / garrison) / walls [S] */
+export const SIEGE_RATE = 13;
+/** engineers speed sieges up by this factor [S] */
+export const ENGINEER_FACTOR = 2;
+/** a city with walls at least this strong yields engineers when taken [S] */
+export const ENGINEER_WALLS = 1.5;
+/** men lost storming a city: garrison x walls x (1 - progress/100) x STORM_COST [S] */
+export const STORM_COST = 0.11;
+/** days of grain for the horses from a taken city with full stores [S] */
+export const GRAIN_DAYS = 10;
+/** most days of rations a column can carry away from a taken city [S] */
+export const MAX_RATION_DAYS = 30;
+/** with fewer men the column can no longer campaign: the game is lost [S] */
+export const DEFEAT_MEN = 1000;

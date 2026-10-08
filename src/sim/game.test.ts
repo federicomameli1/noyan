@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropFlock, effectivePace, newGame, orderHalt, orderMarch, planRoute, setPace, step, takeFlock, type GameState } from "./game";
+import { dropFlock, effectivePace, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, step, stormCost, takeFlock, type GameState } from "./game";
 import { RATIONS_PER_SHEEP, type PaceId } from "./constants";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
@@ -136,10 +136,89 @@ describe("food", () => {
   });
 });
 
-describe("season", () => {
-  it("ends on 31 March 1219", () => {
+describe("sieges", () => {
+  /** a fed column standing at a city */
+  const at = (id: string) => fed("normal", 0, id);
+
+  it("a small town falls in a few days and gives food and grain", () => {
+    const s = at("daizhou");
+    col(s).rations = 3000 * 5;
+    expect(orderSiege(s, 0)).toBe(true);
+    days(s, 3);
+    expect(s.cities.daizhou.taken).toBe(true);
+    expect(col(s).siege).toBeNull();
+    expect(col(s).rations / 3000).toBeGreaterThan(10); // about 37 days of a 1,000-man garrison's food
+    expect(col(s).grain).toBeGreaterThan(0);
+    expect(col(s).engineers).toBe(false); // weak walls, no engineers
+  });
+
+  it("Taiyuan takes about 11 weeks without engineers and half with them", () => {
+    const s = at("taiyuan");
+    expect(siegeDays(col(s), s.cities.taiyuan)).toBeGreaterThanOrEqual(75);
+    expect(siegeDays(col(s), s.cities.taiyuan)).toBeLessThanOrEqual(80);
+    col(s).engineers = true;
+    expect(siegeDays(col(s), s.cities.taiyuan)).toBeLessThanOrEqual(40);
+  });
+
+  it("a stronger town yields engineers", () => {
+    const s = at("xinzhou");
+    orderSiege(s, 0);
+    days(s, 7);
+    expect(s.cities.xinzhou.taken).toBe(true);
+    expect(col(s).engineers).toBe(true);
+  });
+
+  it("storming costs men, less when the siege is advanced, and wins at Taiyuan", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    const fresh = stormCost(s.cities.taiyuan);
+    days(s, 50); // about two thirds of the way
+    const later = stormCost(s.cities.taiyuan);
+    expect(later).toBeLessThan(fresh);
+    orderStorm(s, 0);
+    expect(col(s).men).toBe(3000 - later);
+    expect(s.result).toBe("victory");
+    expect(s.over).toBe(true);
+  });
+
+  it("a long winter siege at Taiyuan starves the horses", () => {
+    const s = fed("normal", 90, "taiyuan"); // from 30 November
+    orderSiege(s, 0);
+    days(s, 35);
+    expect(s.cities.taiyuan.taken).toBe(false);
+    expect(col(s).condition).toBeLessThan(40);
+  });
+
+  it("marching away lifts the siege but keeps the progress", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    days(s, 5);
+    const progress = s.cities.taiyuan.progress;
+    orderMarch(s, 0, "yuci");
+    expect(col(s).siege).toBeNull();
+    expect(s.cities.taiyuan.progress).toBe(progress);
+  });
+});
+
+describe("end of the game", () => {
+  it("is lost when spring comes and Taiyuan still stands", () => {
     const s = newGame();
     days(s, 211);
     expect(s.over).toBe(true);
+    expect(s.result).toBe("defeat");
+  });
+
+  it("is lost when the column falls under 1,000 men", () => {
+    const s = fed("normal", 0, "taiyuan");
+    col(s).men = 4500;
+    orderSiege(s, 0);
+    orderStorm(s, 0); // about 3,300 men lost
+    expect(s.result).toBe("victory"); // the city falls before the count
+    const t = fed("normal", 0, "fenzhou");
+    col(t).men = 1300;
+    orderSiege(t, 0);
+    orderStorm(t, 0); // 440 men lost, 860 left: the storm fails
+    expect(t.cities.fenzhou.taken).toBe(false);
+    expect(t.result).toBe("defeat");
   });
 });

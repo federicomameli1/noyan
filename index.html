@@ -52,17 +52,26 @@
         <div class="hud panel card">
           <span class="label">Layer 0 prototype</span>
           <h1>Into Shanxi, 1218</h1>
-          <p>Genghis Khan has gone west and left Muqali to fight the Jin. Take his column from Datong to Taiyuan across the mountain passes, and keep the horses alive until spring.</p>
+          <p>Genghis Khan has gone west and left Muqali to fight the Jin. Take his column from Datong across the mountain passes and capture Taiyuan before spring, without losing the horses on the way.</p>
           <ul>
             <li>Horses only eat by grazing: every hour on the road is an hour less to eat.</li>
             <li>Forced marches pay off for two or three days, then tired horses slow down and die.</li>
             <li>Sheep are food on the hoof, but the column moves at their pace.</li>
             <li>Winter grass is scarce and poor. A camp that stays put eats the grass around it.</li>
+            <li>A siege can take weeks. Smaller towns fall faster and give food, grain and engineers.</li>
           </ul>
           <p class="label">Take sheep along</p>
           <div class="seg" role="group" aria-label="Flock" id="flocks"></div>
           <button id="begin" class="primary big">Start the campaign</button>
           <p class="note">Click a place to choose where to march. Space pauses, 1 2 3 set the speed.</p>
+        </div>
+      </div>
+      <div class="modal" id="end" hidden>
+        <div class="hud panel card">
+          <span class="label">End of the campaign</span>
+          <h1 id="end-title"></h1>
+          <div id="end-body"></div>
+          <button id="again" class="primary big">Play again</button>
         </div>
       </div>
     </main>

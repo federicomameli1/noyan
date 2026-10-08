@@ -6,13 +6,15 @@ Hobby project, built in layers: first the logistics loop in a single region (lay
 
 ## Layer 0: Into Shanxi, 1218
 
-Muqali's column (3,000 men, 4 horses each) starts at Datong on 1 September 1218 and has until the end of March 1219. Click a place to march there along roads, tracks and passes.
+Muqali's column (3,000 men, 4 horses each) starts at Datong on 1 September 1218 and must take Taiyuan before the end of March 1219. Click a place to march there along roads, tracks and passes.
 
 - Horses only eat by grazing. Marching hours are hours not spent eating, and winter grass is scarce and poor.
 - Each herd has a **condition** (fat, changes over weeks) and a **fatigue** (tiredness, recovered in days).
 - Three paces: **grazing** (15 km a day, horses eat on the way), **normal** (35 km), **forced** (55 km, pays off for two or three days, then tired horses slow down and die).
 - Sheep are food on the hoof, but a column with a flock moves at the grazing pace. Flocks can be left at a place and picked up later.
 - A column standing still eats the grass around its camp: a long winter stop in the plain wears the horses down.
+- Jin towns can be besieged. Waiting costs time and grass, storming costs men. Taken towns give food, grain for the horses and, from walled towns, engineers that halve later sieges.
+- You win by taking Taiyuan before 31 March 1219; you lose if spring comes first or the column falls below 1,000 men.
 
 The map fills the screen. Hover a place to see the route and how many days it takes, click it to march there. The game pauses by itself when the column arrives or something goes wrong (thin horses, food running out). Space pauses, 1 2 3 set the speed. At 1x a game day lasts 8 seconds. Every number of the rules is in `src/sim/constants.ts`, tagged as documented, modern estimate or game estimate.
 

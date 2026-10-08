@@ -123,6 +123,8 @@ dd { margin: 0; }
 .card .seg { margin: 6px 0 16px; }
 .card .seg button { flex: 1; }
 .card .big { width: 100%; margin-bottom: 10px; }
+.card dl { margin: 0 0 16px; }
+.column .note { margin-top: 6px; }
 
 /* phones: the column panel becomes a strip at the bottom, the place card sits above it */
 @media (max-width: 640px) {
