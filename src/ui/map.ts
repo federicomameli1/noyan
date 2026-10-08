@@ -31,16 +31,28 @@ export interface MapOptions {
   onSelectSite?: (s: Site) => void;
   /** pointer entering (site) or leaving (null) a site */
   onHoverSite?: (s: Site | null) => void;
+  /** a column's helmet was clicked or tapped, by its index */
+  onSelectColumn?: (i: number) => void;
   /** Jin strongholds that can be besieged, by site id */
   targets?: Record<string, CityType>;
+}
+
+export interface ColumnMark {
+  name: string;
+  lon: number;
+  lat: number;
+  /** horses' condition, 0-100, shown as a small bar coloured by level */
+  condition: number;
+  level: "ok" | "warn" | "bad";
+  active: boolean;
 }
 
 export interface GameMap {
   setLayer(l: Layer): void;
   zoom(factor: number): void;
   resetView(): void;
-  /** moves Muqali's column icon to a (lon, lat) point */
-  placeColumn(lon: number, lat: number): void;
+  /** draws the army's columns as helmets with their name and horse condition; the active one is in front */
+  setColumns(cols: readonly ColumnMark[]): void;
   /** draws the planned route, as (lon, lat) points; empty to clear it */
   setRoute(points: readonly (readonly [number, number])[]): void;
   /** draws a possible route, fainter than the planned one; empty to clear it */
@@ -49,8 +61,6 @@ export interface GameMap {
   selectSite(id: string | null): void;
   /** zooms onto a (lon, lat) box */
   focus(lon0: number, lat0: number, lon1: number, lat1: number): void;
-  /** horse condition (0-100) as a small bar under the column's name, coloured by level */
-  setColumnCondition(condition: number, level: "ok" | "warn" | "bad"): void;
   /** strongholds already taken: drawn in Mongol colours */
   setTaken(ids: readonly string[]): void;
 }
@@ -498,13 +508,27 @@ export function createMap(opts: MapOptions): GameMap {
   [0, 1, 2, 3].forEach(i => el("rect", { x: i * 50 * pxPerKm, y: 0, width: 50 * pxPerKm, height: 5, fill: i % 2 ? paper : ink, stroke: ink, "stroke-width": 0.8 }, scale));
   el("text", { x: 0, y: -6, class: "city" }, scale).textContent = "200 km";
 
-  // Muqali's column
-  const column = el("g", { "pointer-events": "none" }, world);
-  el("g", {}, column).innerHTML = helmet();
-  el("text", { x: 17, y: -10, class: "city", style: "font-weight:600;font-size:15px;stroke-width:3px" }, column).textContent = "Muqali";
-  // the horses' condition at a glance, without opening a panel
-  el("rect", { x: -13, y: 12, width: 26, height: 5, rx: 1.5, fill: paper, stroke: ink, "stroke-width": 0.7 }, column);
-  const conditionBar = el("rect", { x: -12.5, y: 12.5, width: 25, height: 4, rx: 1.2 }, column);
+  // the army's columns: a helmet each, drawn when the game says where they are
+  const columnLayer = el("g", {}, world);
+  const columnGs: { g: SVGGElement; name: SVGTextElement; bar: SVGRectElement }[] = [];
+  let columnMarks: readonly ColumnMark[] = [];
+  function columnG(i: number) {
+    while (columnGs.length <= i) {
+      const k = columnGs.length;
+      const g = el("g", { class: "column-mark", tabindex: 0, role: "button" }, columnLayer);
+      el("circle", { r: 16, cy: -6, fill: "transparent" }, g);
+      el("g", {}, g).innerHTML = helmet();
+      const name = el("text", { x: 17, y: -10, class: "city", style: "font-weight:600;font-size:15px;stroke-width:3px" }, g);
+      // the horses' condition at a glance, without opening a panel
+      el("rect", { x: -13, y: 12, width: 26, height: 5, rx: 1.5, fill: paper, stroke: ink, "stroke-width": 0.7 }, g);
+      const bar = el("rect", { x: -12.5, y: 12.5, width: 25, height: 4, rx: 1.2 }, g);
+      const pick = () => { if (!moved) opts.onSelectColumn?.(k); };
+      g.addEventListener("click", pick);
+      g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      columnGs.push({ g, name, bar });
+    }
+    return columnGs[i];
+  }
 
   // paper: grain, stains and darkened edges on top of everything
   el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, filter: "url(#blotch)", "pointer-events": "none", style: "mix-blend-mode:multiply" }, world);
@@ -540,11 +564,16 @@ export function createMap(opts: MapOptions): GameMap {
   clampVB();
   /** svg units per screen pixel: labels and symbols are scaled by it to keep a steady size on screen */
   const labelScale = () => vb.w / (stage.clientWidth || W);
-  let columnAt: Point | null = null;
   function drawColumn() {
-    if (!columnAt) return;
-    const [x, y] = columnAt;
-    column.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1.2, Math.max(0.4, labelScale()))})`);
+    const k = Math.min(1.2, Math.max(0.4, labelScale()));
+    // columns at the same place stand side by side instead of on top of each other
+    const seen = new Map<string, number>();
+    columnMarks.forEach((m, i) => {
+      const [x, y] = project(m.lon, m.lat);
+      const key = `${x.toFixed(0)},${y.toFixed(0)}`, n = seen.get(key) ?? 0;
+      seen.set(key, n + 1);
+      columnG(i).g.setAttribute("transform", `translate(${x + n * 30 * k},${y + n * 38 * k}) scale(${k})`);
+    });
   }
   let drag: { x: number; y: number; vx: number; vy: number } | null = null, moved = false;
   // labels shrink when zooming in, so they stay readable without covering the map
@@ -614,7 +643,20 @@ export function createMap(opts: MapOptions): GameMap {
     setLayer(l) { layer = l; paint(); },
     zoom(f) { zoomAt(f, vb.x + vb.w / 2, vb.y + vb.h / 2); },
     resetView() { vb = { x: 0, y: 0, w: W, h: H }; clampVB(); vb.x = (W - vb.w) / 2; vb.y = (H - vb.h) / 2; setVB(); },
-    placeColumn(lon, lat) { columnAt = project(lon, lat); drawColumn(); },
+    setColumns(cols) {
+      columnMarks = cols;
+      cols.forEach((m, i) => {
+        const { g, name, bar } = columnG(i);
+        if (name.textContent !== m.name) { name.textContent = m.name; g.setAttribute("aria-label", `${m.name}'s column`); }
+        g.classList.toggle("active", m.active);
+        bar.setAttribute("width", (25 * Math.max(0.04, Math.min(1, m.condition / 100))).toFixed(1));
+        bar.setAttribute("fill", C(`--${m.level}`));
+      });
+      // the active column on top
+      const front = cols.findIndex(m => m.active);
+      if (front >= 0 && columnLayer.lastChild !== columnG(front).g) columnLayer.append(columnG(front).g);
+      drawColumn();
+    },
     setPreview(points) {
       previewPath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
     },
@@ -631,10 +673,6 @@ export function createMap(opts: MapOptions): GameMap {
         selMark[1] = x; selMark[2] = y;
         selRing.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, labelScale()))})`);
       }
-    },
-    setColumnCondition(condition, level) {
-      conditionBar.setAttribute("width", (25 * Math.max(0.04, Math.min(1, condition / 100))).toFixed(1));
-      conditionBar.setAttribute("fill", C(`--${level}`));
     },
     setTaken(ids) {
       for (const [id, g] of targetGs) g.classList.toggle("taken", ids.includes(id));

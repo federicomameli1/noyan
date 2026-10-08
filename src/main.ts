@@ -27,6 +27,9 @@ let speed: number = SPEEDS[0];
 let selected: Site | null = null;
 let selectedDesc: string | undefined;
 let hovered: Site | null = null;
+/** the column the player gives orders to */
+let active = 0;
+const col = () => game.columns[active];
 
 const map = createMap({
   container: stage,
@@ -40,9 +43,10 @@ const map = createMap({
   },
   onSelectSite: s => selectSite(s),
   onHoverSite: s => { hovered = s; renderPreview(); },
+  onSelectColumn: i => selectColumn(i),
 });
 const focusColumn = () => {
-  const [lon, lat] = columnPosition(game.columns[0]);
+  const [lon, lat] = columnPosition(col());
   map.focus(lon - 2.4, lat - 1.9, lon + 2.4, lat + 1.9);
 };
 map.focus(111.4, 37.1, 116.6, 41.6);
@@ -113,17 +117,17 @@ $("menu-btn").onclick = () => toggleMenu();
 // --- orders ---
 function march(id: string) {
   if (!started) return;
-  orderMarch(game, 0, id);
+  orderMarch(game, active, id);
   closePlace();
   setPlaying(true);
 }
 
 function storm() {
-  const c = game.columns[0];
+  const c = col();
   if (!c.siege) return;
   const name = graph.site(c.siege).name;
   if (!confirm(`Storm ${name} now? You will lose about ${fmt(stormCost(game.cities[c.siege]))} men.`)) return;
-  orderStorm(game, 0);
+  orderStorm(game, active);
   render();
 }
 
@@ -170,11 +174,11 @@ const bandLevel = (b: ConditionBand) => (b === "exhausted" ? "bad" : b === "thin
 const forecasts = new Map<string, Forecast | null>();
 /** forecast for the first column, cached until the game moves on or the orders change */
 function cachedForecast(dest: string | null, maxDays: number) {
-  const c = game.columns[0];
-  const key = [game.hour, dest, maxDays, c.pace, c.halted, c.at, c.leg?.to, c.route.join(), c.siege, c.sheep].join("|");
+  const c = col();
+  const key = [game.hour, active, dest, maxDays, c.pace, c.halted, c.at, c.leg?.to, c.route.join(), c.siege, c.sheep].join("|");
   if (!forecasts.has(key)) {
     if (forecasts.size > 50) forecasts.clear();
-    forecasts.set(key, forecast(game, 0, dest, maxDays));
+    forecasts.set(key, forecast(game, active, dest, maxDays));
   }
   return forecasts.get(key)!;
 }
@@ -183,7 +187,7 @@ const marchForecast = (id: string, planDays: number) => cachedForecast(id, Math.
 
 /** horses, food and losses when the column gets there, in one sentence */
 function arrivalText(f: Forecast) {
-  const c = game.columns[0];
+  const c = col();
   const e = f.end;
   const lost = c.horses - e.horses;
   const parts = [`horses <b class="t-${bandLevel(e.band)}">${e.band}</b>${e.fatigue >= 85 ? ` but <b class="t-bad">spent</b>` : e.fatigue >= 60 ? ` but <b class="t-warn">worn</b>` : ""}`];
@@ -195,7 +199,7 @@ function arrivalText(f: Forecast) {
 const OUTLOOK_DAYS = 20;
 /** what the next days hold if the orders stay as they are */
 function outlookText() {
-  const c = game.columns[0];
+  const c = col();
   const f = cachedForecast(null, OUTLOOK_DAYS);
   if (!f) return "";
   const now = conditionBand(c.condition);
@@ -221,7 +225,7 @@ function renderPlace() {
   if (!s) return;
   const date = dateOf(game);
   const st = game.sites[s.id];
-  const c = game.columns[0];
+  const c = col();
   const plan = planRoute(game, c, s.id);
   const here = c.at === s.id;
   const food = foodDays(c);
@@ -229,8 +233,8 @@ function renderPlace() {
   let route = "";
   if (here && city && !city.taken) {
     route = c.siege === s.id
-      ? `<div class="route">Besieged: ${Math.floor(city.progress)}%, falls in about ${siegeDays(c, city)} days if the siege goes on.</div>`
-      : `<div class="route">A siege would take about ${siegeDays(c, city)} days${c.engineers ? " with your engineers" : ""}.</div>`;
+      ? `<div class="route">Besieged: ${Math.floor(city.progress)}%, falls in about ${siegeDays(game, c, s.id)} days if the siege goes on.</div>`
+      : `<div class="route">A siege would take about ${siegeDays(game, c, s.id)} days${c.engineers ? " with your engineers" : ""}.</div>`;
   } else if (here) route = `<div class="route">${c.name}'s column is here.</div>`;
   else if (plan) {
     // the forecast knows that tired horses slow down, so its arrival beats the plan's estimate
@@ -263,7 +267,7 @@ function renderPlace() {
   if (changed) {
     info.querySelector<HTMLButtonElement>(".close")!.onclick = closePlace;
     info.querySelector<HTMLButtonElement>("#go")?.addEventListener("click", () => march(s.id));
-    info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, 0); setPlaying(true); });
+    info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
     info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
   }
 }
@@ -309,7 +313,7 @@ function whyText(d: ConditionChange) {
 }
 
 function renderColumn() {
-  const c = game.columns[0];
+  const c = col();
   const camp = campSite(c);
   const dest = c.route.at(-1) ?? c.leg?.to;
   const besieged = c.siege ? game.cities[c.siege] : null;
@@ -322,6 +326,7 @@ function renderColumn() {
   const density = pastureDensity(camp, dateOf(game).month, game.sites[camp.id]);
   const flockHere = c.at ? game.sites[c.at].sheep : 0;
   const changed = setHTML($("column"), `<button class="fold icon" aria-label="${folded ? "Show details" : "Hide details"}" aria-expanded="${!folded}">${folded ? "▴" : "▾"}</button>
+    ${game.columns.length > 1 ? `<div class="seg tabs" role="group" aria-label="Column">${game.columns.map((x, i) => `<button data-col="${i}" aria-pressed="${i === active}">${x.name}</button>`).join("")}</div>` : ""}
     <h2>${c.name}</h2>
     <p class="status">${status}</p>
     <p class="compact">${besieged ? `Siege ${Math.floor(besieged.progress)}% · ` : ""}condition ${c.condition.toFixed(0)} · fatigue ${c.fatigue.toFixed(0)} · food ${Math.floor(food)} days · ${fmt(c.horses)} horses</p>
@@ -337,7 +342,7 @@ function renderColumn() {
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
-    ${besieged ? bar("Siege", besieged.progress, "ok", `${siegeDays(c, besieged)} days`) : ""}
+    ${besieged ? bar("Siege", besieged.progress, "ok", `${siegeDays(game, c, c.siege!)} days`) : ""}
     ${c.engineers || c.grain > 0 ? `<p class="note">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(" · ")}</p>` : ""}
     <div class="orders">
       <div class="seg" role="group" aria-label="Pace">
@@ -353,15 +358,16 @@ function renderColumn() {
     <p class="outlook">${outlookText()}</p>
     <p class="hint">${c.sheep > 0 ? "The flock sets the pace. Leave it somewhere to march faster." : PACE_HINT[pace]}${speedFactor(c) < 1 ? `. Tired or thin horses: ${Math.round(PACES[pace].marchHours * PACES[pace].kmPerHour * speedFactor(c))} km a day.` : ""}</p>`);
   if (!changed) return;
-  const col = $("column");
-  col.querySelector<HTMLButtonElement>(".fold")!.onclick = () => { folded = !folded; col.classList.toggle("collapsed", folded); render(); };
-  col.querySelector<HTMLButtonElement>(".why")!.onclick = () => { showWhy = !showWhy; render(); };
-  col.querySelectorAll<HTMLButtonElement>("[data-pace]").forEach(b => { b.onclick = () => { setPace(game, 0, b.dataset.pace as PaceId); render(); }; });
-  col.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, 0); render(); });
-  col.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, 0); setPlaying(true); });
-  col.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
-  col.querySelector<HTMLButtonElement>("#drop")?.addEventListener("click", () => { dropFlock(game, 0); render(); });
-  col.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, 0); render(); });
+  const panel = $("column");
+  panel.querySelector<HTMLButtonElement>(".fold")!.onclick = () => { folded = !folded; panel.classList.toggle("collapsed", folded); render(); };
+  panel.querySelector<HTMLButtonElement>(".why")!.onclick = () => { showWhy = !showWhy; render(); };
+  panel.querySelectorAll<HTMLButtonElement>("[data-col]").forEach(b => { b.onclick = () => selectColumn(Number(b.dataset.col)); });
+  panel.querySelectorAll<HTMLButtonElement>("[data-pace]").forEach(b => { b.onclick = () => { setPace(game, active, b.dataset.pace as PaceId); render(); }; });
+  panel.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, active); render(); });
+  panel.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
+  panel.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
+  panel.querySelector<HTMLButtonElement>("#drop")?.addEventListener("click", () => { dropFlock(game, active); render(); });
+  panel.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, active); render(); });
 }
 
 // --- journal and notices ---
@@ -380,7 +386,7 @@ function renderLog() {
   }
   logSeen = game.log.length;
   // reaching a Jin town opens its card, where the siege starts
-  const c = game.columns[0];
+  const c = col();
   if (arrived && c.at && canBesiege(game, c) && selected?.id !== c.at) selectSite(graph.site(c.at));
 }
 function toast(l: LogEntry) {
@@ -394,19 +400,19 @@ function toast(l: LogEntry) {
 }
 
 // --- map overlays ---
-function routePoints(c = game.columns[0], sites: string[]) {
+function routePoints(c: Column, sites: string[]) {
   const pts: [number, number][] = [columnPosition(c)];
   for (const id of sites) { const s = graph.site(id); pts.push([s.lon, s.lat]); }
   return pts;
 }
 function renderRoute() {
-  const c = game.columns[0];
+  const c = col();
   if (c.halted || (!c.leg && !c.route.length)) { map.setRoute([]); return; }
   map.setRoute(routePoints(c, c.leg ? [c.leg.to, ...c.route] : c.route));
 }
 function renderPreview() {
   const target = hovered ?? selected;
-  const c = game.columns[0];
+  const c = col();
   const plan = target && started ? planRoute(game, c, target.id) : null;
   map.setPreview(plan && plan.sites.length ? routePoints(c, plan.sites) : []);
   if (hovered && plan && plan.sites.length) {
@@ -424,25 +430,39 @@ function render() {
   $("play").textContent = playing ? "❚❚" : "▶";
   $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
-  const [lon, lat] = columnPosition(game.columns[0]);
-  map.placeColumn(lon, lat);
-  map.setColumnCondition(game.columns[0].condition, bandLevel(conditionBand(game.columns[0].condition)));
+  renderColumns();
   map.setTaken(Object.keys(game.cities).filter(id => game.cities[id].taken));
   renderRoute();
   renderColumn();
   renderPlace();
 }
 
+function renderColumns() {
+  map.setColumns(game.columns.map((c, i) => {
+    const [lon, lat] = columnPosition(c);
+    return { name: c.name, lon, lat, condition: c.condition, level: bandLevel(conditionBand(c.condition)), active: i === active };
+  }));
+}
+
+function selectColumn(i: number) {
+  if (i === active || !game.columns[i]) return;
+  active = i;
+  render();
+}
+
 // --- end of the game ---
 function showEnd() {
-  const c = game.columns[0];
+  const men = game.columns.reduce((n, c) => n + c.men, 0), horses = game.columns.reduce((n, c) => n + c.horses, 0);
+  const sent = SCENARIO.reinforcements.slice(0, game.arrived).map(r => r.column);
+  const menAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men, 0);
+  const horsesAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men * c.horsesPerMan, 0);
   const taken = Object.entries(game.cities).filter(([, x]) => x.taken).map(([id]) => graph.site(id).name);
   const win = game.result === "victory";
   $("end-title").textContent = win ? "Taiyuan has fallen" : "The campaign has failed";
   setHTML($("end-body"), `<p>${game.log.at(-1)?.text ?? ""}</p><dl>
     <dt>Date</dt><dd>${formatDate(dateOf(game))}</dd>
-    <dt>Men</dt><dd>${fmt(c.men)} of ${fmt(SCENARIO.column.men)}</dd>
-    <dt>Horses</dt><dd>${fmt(c.horses)} of ${fmt(SCENARIO.column.men * SCENARIO.column.horsesPerMan)}, ${BAND[conditionBand(c.condition)]}</dd>
+    <dt>Men</dt><dd>${fmt(men)} of ${fmt(menAtStart)}</dd>
+    <dt>Horses</dt><dd>${fmt(horses)} of ${fmt(horsesAtStart)}</dd>
     <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd></dl>`);
   $("end").hidden = false;
 }
@@ -467,7 +487,7 @@ function frame(now: number) {
     }
     if (stepped) {
       if (now - lastPanel > 200 || game.log.length !== logSeen) { lastPanel = now; render(); }
-      else { const [lon, lat] = columnPosition(game.columns[0]); map.placeColumn(lon, lat); renderRoute(); }
+      else { renderColumns(); renderRoute(); }
     }
     if (game.over) setPlaying(false);
   } else acc = 0;
