@@ -139,7 +139,7 @@ dd { margin: 0; }
 }
 
 /* title screen: the live map stays visible behind a card, and drifts slowly until Play is pressed */
-.title { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; padding: 24px 5vw; background: linear-gradient(90deg, color-mix(in srgb, var(--paper) 92%, transparent) 0, color-mix(in srgb, var(--paper) 70%, transparent) 34rem, transparent 60rem); transition: opacity .6s; }
+.title { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; padding: 24px 5vw; background: radial-gradient(ellipse min(30vw, 480px) min(30vw, 420px) at calc(100% - 2vw - min(25vw, 410px)) 50%, color-mix(in srgb, var(--paper) 88%, transparent) 40%, transparent), linear-gradient(90deg, color-mix(in srgb, var(--paper) 92%, transparent) 0, color-mix(in srgb, var(--paper) 70%, transparent) 34rem, transparent 60rem); transition: opacity .6s; }
 .title.gone { opacity: 0; pointer-events: none; }
 .title-card { max-width: 30rem; display: grid; gap: 14px; justify-items: start; }
 .title h1 { font: clamp(3.6rem, 9vw, 6.5rem) / .85 var(--f-map); color: var(--label); margin: 0; letter-spacing: .04em; }
@@ -148,10 +148,9 @@ dd { margin: 0; }
 .mechanics li { padding-left: 14px; border-left: 2px solid var(--road); font-size: 14.5px; }
 .mechanics b { display: block; font: 1.2rem var(--f-map); font-weight: 400; color: var(--label); }
 .title .big { font-size: 17px; padding: 12px 40px; }
-/* a period painting laid on the map like a loose print */
-.plate { position: absolute; right: 4vw; bottom: 6vh; width: min(36vw, 560px); margin: 0; padding: 10px 10px 8px; background: var(--hud); border: 1px solid var(--hud-line); box-shadow: 0 6px 22px rgb(59 47 34 / .3); transform: rotate(1.2deg); }
-.plate img { display: block; width: 100%; height: auto; }
-.plate figcaption { margin-top: 6px; font: italic 12.5px / 1.35 var(--f-map-it); color: var(--muted); }
+/* a period painting soaked into the map: its paper multiplies with the parchment and its edges fade out */
+.plate { position: absolute; right: 2vw; top: 50%; translate: 0 -50%; width: min(50vw, 820px); height: auto; mix-blend-mode: multiply; opacity: .92; pointer-events: none;
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%); -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%); }
 @media (max-width: 900px) { .plate { display: none; } }
 /* while the title is up, only the map shows: no panels, and the map drifts */
 .at-title .stage > :not(svg) { visibility: hidden; }

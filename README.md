@@ -51,3 +51,7 @@ Every push to `main` runs the tests and the build, then publishes `dist/` to Git
 ## Geographic data
 
 Coasts, rivers and lakes from Natural Earth 10m (public domain). Relief from AWS Terrain Tiles (SRTM and other sources). Region borders, pasture and control values are still made up for the prototype.
+
+## Credits
+
+The painting on the title screen is "Pursuit by Mongol warriors", Ilkhanid Iran, early 14th century, from the Diez Albums at the Staatsbibliothek zu Berlin (public domain).
