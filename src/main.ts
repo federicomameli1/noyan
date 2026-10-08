@@ -2,9 +2,10 @@ import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
   canBesiege, foodDays, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
-  speedFactor, spoils, step, stormCost, stormFails, takeFlock, 
-  type CityState, type Column, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
+  speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
+  type CityState, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
+import * as saves from "./ui/saves";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, mix, targetSymbol, type Layer } from "./ui/map";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -52,10 +53,22 @@ const focusColumn = () => {
 map.focus(111.4, 37.1, 116.6, 41.6);
 
 // --- title screen, then the start card ---
-$("play-game").onclick = () => {
+function leaveTitle() {
   $("title").classList.add("gone");
   document.body.classList.remove("at-title");
-};
+}
+$("play-game").onclick = leaveTitle;
+// a game left halfway can be picked up from the title screen
+saves.latest().then(save => {
+  if (!save || save.game.over || started) return;
+  const cont = $<HTMLButtonElement>("continue");
+  cont.hidden = false;
+  cont.classList.add("primary");
+  $("play-game").classList.remove("primary");
+  $("continue-note").hidden = false;
+  $("continue-note").textContent = `Saved game: ${describeSave(save)}.`;
+  cont.onclick = () => { leaveTitle(); loadGame(save); };
+});
 
 const flocks = $("flocks");
 SCENARIO.flockOptions.forEach(n => {
@@ -113,6 +126,66 @@ function toggleMenu(open: boolean = menu.hidden === true) {
   stage.classList.toggle("side-open", open || !info.hidden);
 }
 $("menu-btn").onclick = () => toggleMenu();
+
+// --- saves: an automatic one every game day, a manual one, and files ---
+const loadBtn = $<HTMLButtonElement>("load");
+saves.load("manual").then(save => { loadBtn.disabled = !save; });
+function note(text: string) { $("save-note").textContent = text; }
+
+function loadGame(save: SaveFile) {
+  game = save.game;
+  active = save.active;
+  started = true;
+  forecasts.clear();
+  savedDay = Math.floor(game.hour / 24);
+  logSeen = game.log.length;
+  delete $("log").dataset.count;
+  $("start").hidden = true;
+  $("end").hidden = true;
+  closePlace();
+  setPlaying(false);
+  focusColumn();
+  toast({ hour: game.hour, text: `Game loaded: ${describeSave(save)}. Press space to go on.` });
+}
+const confirmLoad = () => !started || game.over || confirm("Load the saved game? The campaign in progress is lost since its last save.");
+
+$("save").onclick = async () => {
+  if (!started) return note("Start the campaign first.");
+  const ok = await saves.store("manual", makeSave(game, active));
+  loadBtn.disabled = !ok && loadBtn.disabled;
+  note(ok ? `Saved: ${formatDate(dateOf(game))}.` : "This browser refused to save. Use Export to file instead.");
+};
+loadBtn.onclick = async () => {
+  const save = await saves.load("manual");
+  if (!save) return note("There is no saved game, or it can no longer be read.");
+  if (confirmLoad()) { loadGame(save); toggleMenu(false); }
+};
+$("export").onclick = () => {
+  if (!started) return note("Start the campaign first.");
+  const save = makeSave(game, active);
+  saves.exportFile(save, saveFileName(save));
+};
+const importFile = $<HTMLInputElement>("import-file");
+$("import").onclick = () => importFile.click();
+importFile.onchange = async () => {
+  const file = importFile.files?.[0];
+  importFile.value = "";
+  if (!file) return;
+  try {
+    const save = readSave(await file.text());
+    if (confirmLoad()) { loadGame(save); toggleMenu(false); }
+  } catch (e) {
+    note(e instanceof Error ? e.message : "This file cannot be read.");
+  }
+};
+
+/** the last game day saved automatically */
+let savedDay = 0;
+function autosave() {
+  if (started) saves.store("auto", makeSave(game, active));
+}
+// also on leaving the page, so closing the tab loses at most the current day
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") autosave(); });
 
 // --- orders ---
 function march(id: string) {
@@ -485,6 +558,7 @@ function frame(now: number) {
       // stop at once on an arrival or an alert, so the player sees it when it happens
       if (game.log.slice(before).some(l => l.kind === "arrival" || l.kind === "alert")) break;
     }
+    if (stepped && Math.floor(game.hour / 24) !== savedDay) { savedDay = Math.floor(game.hour / 24); autosave(); }
     if (stepped) {
       if (now - lastPanel > 200 || game.log.length !== logSeen) { lastPanel = now; render(); }
       else { renderColumns(); renderRoute(); }
