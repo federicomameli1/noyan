@@ -90,6 +90,9 @@ export function regionFill(r: Region, layer: Layer): string | null {
   }
 }
 
+/** How far above a place a column standing there is drawn: clears the place's symbol and its clickable area. */
+const COLUMN_LIFT = 30;
+
 /** Mongol helmet used as the column marker, on the map and in the legend. */
 export function helmet(): string {
   const ink = cssVar("--ink"), paper = cssVar("--paper"), label = cssVar("--label");
@@ -564,6 +567,7 @@ export function createMap(opts: MapOptions): GameMap {
   clampVB();
   /** svg units per screen pixel: labels and symbols are scaled by it to keep a steady size on screen */
   const labelScale = () => vb.w / (stage.clientWidth || W);
+  const sitePoints = (graph?.sites ?? []).map(st => project(st.lon, st.lat));
   function drawColumn() {
     const k = Math.min(1.2, Math.max(0.4, labelScale()));
     // columns at the same place stand side by side instead of on top of each other
@@ -572,7 +576,9 @@ export function createMap(opts: MapOptions): GameMap {
       const [x, y] = project(m.lon, m.lat);
       const key = `${x.toFixed(0)},${y.toFixed(0)}`, n = seen.get(key) ?? 0;
       seen.set(key, n + 1);
-      columnG(i).g.setAttribute("transform", `translate(${x + n * 30 * k},${y + n * 38 * k}) scale(${k})`);
+      // at a town or pass the helmet stands just above it, so the place underneath can still be clicked
+      const lift = sitePoints.some(([sx, sy]) => Math.abs(sx - x) < 1 && Math.abs(sy - y) < 1) ? COLUMN_LIFT : 0;
+      columnG(i).g.setAttribute("transform", `translate(${x + n * 30 * k},${y + (n * 38 - lift) * k}) scale(${k})`);
     });
   }
   let drag: { x: number; y: number; vx: number; vy: number } | null = null, moved = false;
