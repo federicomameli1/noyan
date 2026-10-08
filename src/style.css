@@ -36,6 +36,7 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 .sel { fill: none; stroke: var(--label); stroke-width: 2.6; pointer-events: none; }
 .rname { font: 15px var(--f-map); font-size: calc(16px * var(--ls, 1)); fill: var(--label); letter-spacing: .14em; paint-order: stroke; stroke: var(--paper); stroke-width: calc(3px * var(--ls, 1)); stroke-opacity: .8; pointer-events: none; }
 .city { font: italic 12.5px var(--f-map-it); font-size: calc(14px * var(--ls, 1)); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: calc(2.6px * var(--ls, 1)); stroke-opacity: .85; pointer-events: none; }
+.range { font: italic 14px var(--f-map-it); font-size: calc(15px * var(--ls, 1)); letter-spacing: .35em; fill: var(--ink-soft); paint-order: stroke; stroke: var(--paper); stroke-width: calc(2.4px * var(--ls, 1)); stroke-opacity: .6; }
 .pass, .site { cursor: pointer; }
 /* a place's name selects it too, not the region under it */
 .site text, .pass text { pointer-events: auto; }

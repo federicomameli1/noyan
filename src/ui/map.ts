@@ -12,6 +12,15 @@ export const LABELS = {
   diplomatic: { ally: "Allied or submitted", neutral: "Wavering", hostile: "Hostile" },
 } as const;
 
+/** Main mountain ranges: name and a line along the crest, west or south end first, as (lon, lat). Approximate. */
+const RANGES: [string, [number, number][]][] = [
+  ["Taihang Shan", [[113.25, 35.75], [113.65, 36.7], [113.85, 37.45]]],
+  ["Lüliang Shan", [[110.95, 36.75], [111.25, 37.6], [111.5, 38.35]]],
+  ["Yan Shan", [[117.45, 40.5], [118.3, 40.38], [119.1, 40.25]]],
+  ["Wutai Shan", [[113.4, 38.75], [114.05, 39.0]]],
+  ["Yin Shan", [[108.7, 41.15], [110.1, 41.35], [111.4, 41.3]]],
+];
+
 export interface MapOptions {
   container: HTMLElement;
   tooltip: HTMLElement;
@@ -214,8 +223,12 @@ export function createMap(opts: MapOptions): GameMap {
       el("path", { d: `M${x - s},${y}Q${x + j(1.5)},${y - s * (0.9 + j(0.3))} ${x + s},${y}`, fill: "none", stroke: soft, "stroke-width": 0.9 }, reliefG);
       return;
     }
-    const big = k === "M", px = x + j(s * 0.3), py = y - s * ((big ? 1.3 : 1.05) + j(0.25));
-    const g = el("g", {}, reliefG);
+    drawPeak(x, y, s, k === "M", reliefG);
+  });
+  /** A mountain in ink: outline on paper and hatching on the shaded side, its base centred on (x, y). */
+  function drawPeak(x: number, y: number, s: number, big: boolean, parent: Element) {
+    const px = x + j(s * 0.3), py = y - s * ((big ? 1.3 : 1.05) + j(0.25));
+    const g = el("g", {}, parent);
     el("path", { d: `M${x - s},${y}Q${x - s * 0.5},${y - s * 0.45} ${px},${py}Q${x + s * 0.45},${y - s * 0.5} ${x + s},${y}`, fill: paper, stroke: ink, "stroke-width": big ? 1.3 : 1.05 }, g);
     let h = "";
     const n = big ? 5 : 3;
@@ -224,6 +237,18 @@ export function createMap(opts: MapOptions): GameMap {
       h += `M${hx.toFixed(1)},${hy.toFixed(1)}L${(hx - s * 0.2).toFixed(1)},${(y - 1).toFixed(1)}`;
     }
     el("path", { d: h, fill: "none", stroke: ink, "stroke-width": big ? 0.85 : 0.7, "stroke-opacity": 0.85 }, g);
+  }
+
+  // names of the main ranges, in spaced italics along their crest
+  const rangeG = el("g", { "pointer-events": "none" }, landG);
+  const rangeTexts: SVGTextElement[] = [];
+  RANGES.forEach(([name, pts], i) => {
+    const d = pts.map(([lon, lat], k) => { const [x, y] = project(lon, lat); return `${k ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join("");
+    el("path", { id: `range-${i}`, d, fill: "none" }, rangeG);
+    const t = el("text", { class: "range" }, rangeG);
+    rangeTexts.push(t);
+    const tp = el("textPath", { href: `#range-${i}`, startOffset: "50%", "text-anchor": "middle" }, t);
+    tp.textContent = name;
   });
 
   // waters and coasts in ink
@@ -285,6 +310,15 @@ export function createMap(opts: MapOptions): GameMap {
     juyong: [10, -6, "start"], zijing: [-10, 16, "end"], gubeikou: [10, -8, "start"], yehuling: [-10, -8, "end"],
     yanmen: [-11, 4, "end"], niangzi: [0, 25, "middle"], tongguan: [0, -17, "middle"], yuguan: [10, 16, "start"],
   };
+  /** unit direction of the way through a pass, from the places it links; west to east if it links none */
+  function roadDirection(p: Pass): [number, number] {
+    const ends = graph?.sites.some(s => s.id === p.id) ? graph.neighbours(p.id).map(n => graph.site(n.to)) : [];
+    if (ends.length < 2) return [1, 0];
+    const [ax, ay] = project(ends[0].lon, ends[0].lat), [bx, by] = project(ends.at(-1)!.lon, ends.at(-1)!.lat);
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    return [(bx - ax) / len, (by - ay) / len];
+  }
+  const passPeakG = el("g", { "pointer-events": "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, landG);
   const passG = el("g", {}, world);
   /** pass symbols shrink with the labels when zooming in */
   const passGlyphs: [SVGGElement, number, number][] = [];
@@ -302,15 +336,19 @@ export function createMap(opts: MapOptions): GameMap {
     targets[id] ? `${name} · ${targetGs.get(id)?.classList.contains("taken") ? "taken" : TARGET_TEXT[targets[id]]}` : fallback;
   GEO.passes.forEach(p => {
     const g = el("g", { class: "pass", tabindex: 0, role: "button", "aria-label": p.name }, passG);
-    if (targets[p.id]) {
-      el("circle", { cx: p.x, cy: p.y, r: 12, fill: "transparent" }, g);
-      drawTarget(p.id, p.x, p.y, g);
-    } else {
-      const glyph = el("g", {}, g);
-      passGlyphs.push([glyph, p.x, p.y]);
-      el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, glyph);
-      el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, glyph);
-    }
+    // the pass as a gap in the range: a peak on each side, across the road that goes through it
+    const [rx, ry] = roadDirection(p);
+    const ux = -ry, uy = rx;
+    // the peaks belong to the relief, so they keep its size when zooming; the lower one last, on top
+    for (const side of uy >= 0 ? [-1, 1] : [1, -1]) drawPeak(p.x + side * 12 * ux, p.y + side * 12 * uy + 4, 8, true, passPeakG);
+    const glyph = el("g", {}, g);
+    passGlyphs.push([glyph, p.x, p.y]);
+    el("circle", { cx: p.x, cy: p.y, r: 12, fill: "transparent" }, glyph);
+    const sx = (side: number) => p.x + side * 7 * ux, sy = (side: number) => p.y + side * 7 * uy;
+    const bracket = (side: number) =>
+      `M${(sx(side) - 6 * rx).toFixed(1)},${(sy(side) - 6 * ry).toFixed(1)}Q${(p.x + side * 2.5 * ux).toFixed(1)},${(p.y + side * 2.5 * uy).toFixed(1)} ${(sx(side) + 6 * rx).toFixed(1)},${(sy(side) + 6 * ry).toFixed(1)}`;
+    if (targets[p.id]) drawTarget(p.id, p.x, p.y, g);
+    else el("path", { class: "pmark", d: bracket(-1) + bracket(1), fill: "none", stroke: C("--road"), "stroke-width": 2.2, "stroke-linecap": "round" }, glyph);
     const [dx, dy, anc] = PASS_LABEL[p.id] ?? [10, -8, "start"];
     const t = el("text", { x: p.x + dx, y: p.y + dy, "text-anchor": anc, class: "pname" }, g);
     t.textContent = p.name.replace(" Pass", "");
@@ -417,6 +455,8 @@ export function createMap(opts: MapOptions): GameMap {
       Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
     const ls = maxW() / (stage.clientWidth || W);
     svg.style.setProperty("--ls", String(ls));
+    // range names are fixed along their crest: other labels keep clear of them
+    for (const t of rangeTexts) { const b = t.getBBox(); placed.push({ x: b.x, y: b.y, width: b.width, height: b.height }); }
     [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
       let best: [Candidate, Box] | null = null, bestCost = Infinity;
       for (const cand of L.cands) {
