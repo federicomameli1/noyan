@@ -5,6 +5,7 @@
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
+import { armyAt, cityFalls, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export interface Leg {
@@ -36,6 +37,8 @@ export interface Column {
   route: string[];
   /** set by a halt order: the column stays where it is, even halfway along a link */
   halted: boolean;
+  /** a Jin army bars the road at this site: the column waits in front of it */
+  waiting: string | null;
   today: { marchHours: number; km: number };
   /** the city being besieged, if any */
   siege: string | null;
@@ -86,6 +89,8 @@ export interface CityState {
   /** days of food left inside the walls */
   stores: number;
   storesAtStart: number;
+  /** days in a row a column has besieged it: a relief army may set out */
+  besiegedDays: number;
   /** 0-100: at 100 the city falls */
   progress: number;
   taken: boolean;
@@ -102,6 +107,8 @@ export interface GameState {
   /** hours since the start of the scenario */
   hour: number;
   columns: Column[];
+  /** Jin armies in the field */
+  jin: JinArmy[];
   sites: Record<string, SiteState>;
   cities: Record<string, CityState>;
   log: LogEntry[];
@@ -120,7 +127,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
-    condition: c.condition, fatigue: 0, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false,
+    condition: c.condition, fatigue: 0, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, waiting: null,
     today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
@@ -134,11 +141,11 @@ export function newGame(sheep = 0): GameState {
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0 };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
-    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, progress: 0, taken: false };
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], sites, cities, arrived: 0, over: false, result: null,
-    log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring.` }],
+    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, over: false, result: null,
+    log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
 
@@ -186,7 +193,7 @@ export function pastureDensity(site: Site, month: number, st: SiteState): number
 export const foodDays = (c: Column) => (c.men > 0 ? (c.rations + c.sheep * R.RATIONS_PER_SHEEP) / c.men : 0);
 
 /** Position as (lon, lat), interpolated along the current leg. */
-export function columnPosition(c: Column): [number, number] {
+export function columnPosition(c: Pick<Column, "at" | "leg">): [number, number] {
   if (!c.leg) { const s = graph.site(c.at!); return [s.lon, s.lat]; }
   const a = graph.site(c.leg.from), b = graph.site(c.leg.to), t = c.leg.done / c.leg.km;
   return [a.lon + (b.lon - a.lon) * t, a.lat + (b.lat - a.lat) * t];
@@ -213,7 +220,8 @@ export const isClosed = (s: GameState, id: string) => {
 
 /** Fastest path from a site to another. At a fortress that still holds, the column can only go back the way it came. */
 function pathFrom(s: GameState, site: string, cameFrom: string | null, dest: string): string[] | null {
-  const closed = (id: string) => isClosed(s, id);
+  // a Jin army bars the road through its place too, but the column only knows of the ones its scouts see
+  const closed = (id: string) => isClosed(s, id) || knownArmyAt(s, id);
   if (site !== dest && cameFrom && closed(site)) {
     const back = findPath(graph, cameFrom, dest, closed);
     return back && [site, ...back];
@@ -347,6 +355,7 @@ export function siegeRate(c: Column, city: CityState): number {
 /** Days until the city falls if this column besieges it, together with the other columns already there. */
 export function siegeDays(s: GameState, c: Column, id: string): number {
   const city = s.cities[id];
+  if (isRelieved(s, id)) return Infinity;
   const rate = s.columns.reduce((r, o) => r + (o !== c && o.siege === id ? siegeRate(o, city) : 0), siegeRate(c, city));
   return Math.min(Math.ceil((100 - city.progress) / rate), Math.ceil(city.stores));
 }
@@ -408,6 +417,7 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   const got = spoils(c, city, stormed);
   city.taken = true;
   city.stores = 0;
+  cityFalls(s, id);
   for (const o of s.columns) if (o.siege === id) o.siege = null;
   c.rations += got.rations;
   c.grain = Math.max(c.grain, got.grain);
@@ -471,7 +481,7 @@ export function takeFlock(s: GameState, ci: number): boolean {
 
 // --- simulation ---
 
-function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
+export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
   s.log.push(kind ? { hour: s.hour, text, kind } : { hour: s.hour, text });
 }
 
@@ -480,6 +490,7 @@ export function step(s: GameState) {
   if (s.over) return;
   const hourOfDay = dateOf(s).hour;
   for (const c of s.columns) stepColumn(s, c, hourOfDay);
+  stepJin(s, hourOfDay);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
   const next = SCENARIO.reinforcements[s.arrived];
@@ -491,36 +502,66 @@ export function step(s: GameState) {
   checkEnd(s);
 }
 
+/** Anything that moves along the graph: a column or a Jin army. */
+export interface Mover {
+  at: string | null;
+  leg: Leg | null;
+  cameFrom: string | null;
+  route: string[];
+}
+
+/**
+ * Moves along the route by `km` (on a road; slower links take more of it). Stops at a site when
+ * `canEnter` refuses the next one. Calls `onArrive` at each site reached. Returns the km covered.
+ */
+export function advance(m: Mover, km: number, canEnter: (next: string, last: boolean) => boolean, onArrive: (site: string) => void): number {
+  let covered = 0;
+  while (km > 0) {
+    if (!m.leg) {
+      const next = m.route[0];
+      if (!next || !canEnter(next, m.route.length === 1)) break;
+      m.route.shift();
+      m.leg = { from: m.at!, to: next, done: 0, km: linkBetween(graph, m.at!, next)!.km };
+      m.at = null;
+    }
+    const speed = R.LINKS[linkBetween(graph, m.leg.from, m.leg.to)!.kind].speed;
+    const step = Math.min(km * speed, m.leg.km - m.leg.done);
+    m.leg.done += step;
+    covered += step;
+    km -= step / speed;
+    if (m.leg.done >= m.leg.km - 1e-9) {
+      m.at = m.leg.to;
+      m.cameFrom = m.leg.from;
+      m.leg = null;
+      onArrive(m.at);
+    }
+  }
+  return covered;
+}
+
+/** The site where a Jin army bars the column's road, if any. The column may still march to it, not through it. */
+export function barredAt(s: GameState, c: Column): string | null {
+  if (c.leg || c.route.length < 2) return null;
+  return armyAt(s, c.route[0]) ? c.route[0] : null;
+}
+
 function stepColumn(s: GameState, c: Column, hourOfDay: number) {
   const pace = R.PACES[effectivePace(c)];
-  const marching = isMoving(c) && hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + pace.marchHours;
+  const barred = isMoving(c) ? barredAt(s, c) : null;
+  if (barred !== c.waiting) {
+    if (barred) log(s, `${c.name} halts: a Jin army bars the road at ${graph.site(barred).name}.`, "alert");
+    c.waiting = barred;
+  }
+  const marching = !barred && isMoving(c) && hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + pace.marchHours;
   if (!marching) {
     c.fatigue = Math.max(0, c.fatigue - R.FATIGUE_RECOVERY * (0.5 + c.condition / 200));
     return;
   }
-  let km = pace.kmPerHour * speedFactor(c);
   c.today.marchHours++;
   c.fatigue = Math.min(100, c.fatigue + pace.fatiguePerHour * remountFactor(c));
-  while (km > 0) {
-    if (!c.leg) {
-      const next = c.route.shift();
-      if (!next) break;
-      c.leg = { from: c.at!, to: next, done: 0, km: linkBetween(graph, c.at!, next)!.km };
-      c.at = null;
-    }
-    const link = linkBetween(graph, c.leg.from, c.leg.to)!;
-    const speed = R.LINKS[link.kind].speed;
-    const step = Math.min(km * speed, c.leg.km - c.leg.done);
-    c.leg.done += step;
-    c.today.km += step;
-    km -= step / speed;
-    if (c.leg.done >= c.leg.km - 1e-9) {
-      c.at = c.leg.to;
-      c.cameFrom = c.leg.from;
-      c.leg = null;
-      if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(c.at).name}.`, "arrival");
-    }
-  }
+  c.today.km += advance(c, pace.kmPerHour * speedFactor(c), (next, last) => last || !armyAt(s, next), site => {
+    if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(site).name}.`, "arrival");
+  });
 }
 
 function endOfDay(s: GameState) {
@@ -574,7 +615,7 @@ function endOfDay(s: GameState) {
     c.horses -= dead;
 
     // siege: progress and the city's hunger
-    if (c.siege) {
+    if (c.siege && !isRelieved(s, c.siege)) {
       const city = s.cities[c.siege];
       city.progress = Math.min(100, city.progress + siegeRate(c, city));
       // the city eats once a day, however many columns surround it
@@ -609,6 +650,8 @@ function endOfDay(s: GameState) {
     }
   }
   if (month >= 3 && month <= 8) for (const st of Object.values(s.sites)) st.grazed *= 1 - R.REGROWTH_PER_DAY;
+  for (const [id, city] of Object.entries(s.cities)) city.besiegedDays = s.columns.some(c => c.siege === id) ? city.besiegedDays + 1 : 0;
+  jinDecide(s);
 }
 
 const BAND_TEXT: Record<ConditionBand, string> = { fat: "fat", fit: "fit", thin: "thin", exhausted: "exhausted" };
