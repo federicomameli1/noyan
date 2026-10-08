@@ -171,8 +171,9 @@ export function createMap(opts: MapOptions): GameMap {
   const washG = el("g", { filter: "url(#wash)" }, landG);
   const cells = REGIONS.map((r, i) => {
     const p = el("path", { d: vor.renderCell(i), class: "region" }, washG);
-    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
-    p.addEventListener("pointermove", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
+    // "region" in the text, so it is not mistaken for the place next to it
+    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} region · pasture ${r.pasture}`, e); });
+    p.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     p.addEventListener("pointerleave", () => { tip.hidden = true; });
     p.addEventListener("click", () => { if (!moved) select(r); });
     return p;
@@ -277,7 +278,7 @@ export function createMap(opts: MapOptions): GameMap {
   // labels: collected here and then arranged by layoutLabels() to avoid overlaps
   type Candidate = [number, number, string];
   interface Box { x: number; y: number; width: number; height: number }
-  const toPlace: { el: SVGTextElement; ax: number; ay: number; pri: number; cands: Candidate[] }[] = [];
+  const toPlace: { el: SVGTextElement; ax: number; ay: number; pri: number; cands: Candidate[]; choice?: Candidate }[] = [];
   const obstacles: Box[] = [];
   const RING: Candidate[] = [[10, 4, "start"], [-10, 4, "end"], [0, -9, "middle"], [0, 16, "middle"], [8, -7, "start"], [-8, -7, "end"], [8, 15, "start"], [-8, 15, "end"]];
   const PASS_LABEL: Record<string, Candidate> = {
@@ -342,12 +343,19 @@ export function createMap(opts: MapOptions): GameMap {
 
   // sites of the movement graph: clickable, labelled when they are towns or pastures
   const siteG = el("g", {}, world);
-  const selRing = el("circle", { r: 7, fill: "none", stroke: C("--label"), "stroke-width": 2, "pointer-events": "none" });
+  // the selection: a double ring in red ink, like a stamp, sized on the symbol it surrounds
+  const selRing = el("g", { fill: "none", stroke: C("--label"), "pointer-events": "none", filter: "url(#wobble)" });
+  const selInner = el("circle", { "stroke-width": 1.8 }, selRing), selOuter = el("circle", { "stroke-width": 0.9, "stroke-dasharray": "4 2.5" }, selRing);
+  const selMark: [SVGGElement, number, number] = [selRing, 0, 0];
+  markers.push(selMark);
+  const selSize = new Map<string, number>();
+  const KIND_TEXT: Record<Site["kind"], string> = { city: "town", pasture: "pasture", pass: "pass", junction: "crossroads" };
   const capitals = new Set(CITIES.filter(c => c.capital).map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
   graph?.sites.forEach(site => {
     const [x, y] = project(site.lon, site.lat);
     const g = el("g", { class: "site", tabindex: 0, role: "button", "aria-label": site.name }, siteG);
     const passDrawn = site.kind === "pass" && drawnPasses.has(site.id);
+    selSize.set(site.id, targets[site.id] || passDrawn ? 15 : site.kind === "junction" ? 7 : 10);
     if (targets[site.id] && !passDrawn) {
       el("circle", { cx: x, cy: y, r: 9, fill: "transparent" }, g);
       drawTarget(site.id, x, y, g);
@@ -375,7 +383,7 @@ export function createMap(opts: MapOptions): GameMap {
       toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
-    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, site.name), e); opts.onHoverSite?.(site); } });
+    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, `${site.name} · ${KIND_TEXT[site.kind]}`), e); opts.onHoverSite?.(site); } });
     g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
@@ -396,29 +404,46 @@ export function createMap(opts: MapOptions): GameMap {
     toPlace.push({ el: t, ax: cx, ay: cy, pri: 2, cands });
   });
 
+  /**
+   * Chooses where each label goes, once, for the most zoomed-out view, where labels are biggest
+   * compared with the map. Zooming in only shrinks them around their anchors, so the same choice
+   * still has no overlaps and labels do not jump from one side to the other while zooming.
+   */
   function layoutLabels() {
     const placed = obstacles.map(b => ({ ...b }));
     const pad = 2;
     const hit = (a: Box, b: Box) => !(a.x + a.width + pad < b.x || b.x + b.width + pad < a.x || a.y + a.height + pad < b.y || b.y + b.height + pad < a.y);
     const area = (a: Box, b: Box) =>
       Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-    const ls = labelScale();
+    const ls = maxW() / (stage.clientWidth || W);
+    svg.style.setProperty("--ls", String(ls));
     [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
-      let best: [number, number, string, Box] | null = null, bestCost = Infinity;
-      for (const [cx, cy, anc] of L.cands) {
-        const dx = cx * ls, dy = cy * ls;
-        L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
+      let best: [Candidate, Box] | null = null, bestCost = Infinity;
+      for (const cand of L.cands) {
+        const [cx, cy, anc] = cand;
+        L.el.setAttribute("x", String(L.ax + cx * ls)); L.el.setAttribute("y", String(L.ay + cy * ls)); L.el.setAttribute("text-anchor", anc);
         const b = L.el.getBBox();
         const outside = b.x < 4 || b.y < 4 || b.x + b.width > W - 4 || b.y + b.height > H - 4 ? 1e6 : 0;
         const cost = outside + placed.reduce((s, o) => s + (hit(b, o) ? 1000 + area(b, o) : 0), 0);
-        if (cost < bestCost) { bestCost = cost; best = [dx, dy, anc, { x: b.x, y: b.y, width: b.width, height: b.height }]; }
+        if (cost < bestCost) { bestCost = cost; best = [cand, { x: b.x, y: b.y, width: b.width, height: b.height }]; }
         if (cost === 0) break;
       }
       if (!best) return;
-      const [dx, dy, anc, box] = best;
-      L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
-      placed.push(box);
+      L.choice = best[0];
+      placed.push(best[1]);
     });
+    svg.style.setProperty("--ls", String(labelScale()));
+    placeLabels();
+  }
+  /** puts each label at its chosen place for the current zoom */
+  function placeLabels() {
+    // symbols stop shrinking at 0.4 (see setVB): beyond that the gap from them stops shrinking too
+    const ls = Math.max(0.4, labelScale());
+    for (const L of toPlace) {
+      if (!L.choice) continue;
+      const [cx, cy, anc] = L.choice;
+      L.el.setAttribute("x", String(L.ax + cx * ls)); L.el.setAttribute("y", String(L.ay + cy * ls)); L.el.setAttribute("text-anchor", anc);
+    }
   }
 
   // compass rose and scale bar, inside the map
@@ -492,8 +517,7 @@ export function createMap(opts: MapOptions): GameMap {
     for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${k}) translate(${-x},${-y})`);
     for (const [g, x, y] of markers) g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
     drawColumn();
-    clearTimeout(relayout);
-    relayout = window.setTimeout(layoutLabels, 150);
+    placeLabels();
   };
   function clampVB() {
     vb.w = Math.min(maxW(), Math.max(W / 8, vb.w)); vb.h = vb.w * aspect;
@@ -533,6 +557,9 @@ export function createMap(opts: MapOptions): GameMap {
     clampVB();
     vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
     clampVB(); setVB();
+    // the most zoomed-out view depends on the shape of the stage: choose the label places again
+    clearTimeout(relayout);
+    relayout = window.setTimeout(layoutLabels, 150);
   }).observe(stage);
 
   paint();
@@ -557,7 +584,13 @@ export function createMap(opts: MapOptions): GameMap {
     selectSite(id) {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
       selRing.style.display = site ? "" : "none";
-      if (site) { const [x, y] = project(site.lon, site.lat); selRing.setAttribute("cx", String(x)); selRing.setAttribute("cy", String(y)); }
+      if (site) {
+        const [x, y] = project(site.lon, site.lat), r = selSize.get(site.id) ?? 10;
+        selInner.setAttribute("r", String(r));
+        selOuter.setAttribute("r", String(r + 3.5));
+        selMark[1] = x; selMark[2] = y;
+        selRing.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, labelScale()))})`);
+      }
     },
     setColumnCondition(condition, level) {
       conditionBar.setAttribute("width", (25 * Math.max(0.04, Math.min(1, condition / 100))).toFixed(1));
