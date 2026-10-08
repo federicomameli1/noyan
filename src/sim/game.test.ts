@@ -235,6 +235,38 @@ describe("fortresses", () => {
   });
 });
 
+describe("why the condition changes", () => {
+  const sum = (d: NonNullable<ReturnType<typeof col>["lastDay"]>) => d.grass + d.season + d.march + d.grain + d.cap + d.dry;
+
+  it("splits each day's change into causes that add up to it", () => {
+    for (const [pace, start] of [["forced", 0], ["normal", 0], ["grazing", 90]] as const) {
+      const s = fed(pace, start);
+      col(s).condition = 60;
+      orderMarch(s, 0, "zhongdu");
+      for (let d = 0; d < 12; d++) {
+        const before = col(s).condition;
+        days(s, 1);
+        const last = col(s).lastDay!;
+        expect(sum(last)).toBeCloseTo(last.total, 9);
+        expect(last.total).toBeCloseTo(col(s).condition - before, 9);
+      }
+    }
+  });
+
+  it("blames the march when marching and the season in winter", () => {
+    const s = fed("forced");
+    orderMarch(s, 0, "zhongdu");
+    days(s, 1);
+    expect(col(s).lastDay!.march).toBeLessThan(0);
+    expect(col(s).lastDay!.km).toBeGreaterThan(40);
+
+    const w = fed("normal", 120); // January, camped
+    days(w, 1);
+    expect(w.columns[0].lastDay!.march).toBe(0);
+    expect(w.columns[0].lastDay!.season).toBeLessThan(0);
+  });
+});
+
 describe("forecasts", () => {
   it("predicts the march to Taiyuan as it then happens, without changing the game", () => {
     const s = fed("normal");

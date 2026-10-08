@@ -3,7 +3,7 @@ import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
   canBesiege, foodDays, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, 
-  type CityState, type Column, type ConditionBand, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
+  type CityState, type Column, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, mix, targetSymbol, type Layer } from "./ui/map";
 
@@ -276,8 +276,8 @@ function grassText(density: number) {
 
 // --- column panel ---
 const level = (v: number, warn: number, bad: number) => (v <= bad ? "bad" : v <= warn ? "warn" : "ok");
-function bar(label: string, value: number, cls: string, text: string) {
-  return `<div class="bar"><span>${label}</span><i><b class="${cls}" style="width:${Math.max(2, Math.min(100, value))}%"></b></i><span>${text}</span></div>`;
+function bar(label: string, value: number, cls: string, text: string, open = `<div class="bar">`, close = "</div>") {
+  return `${open}<span>${label}</span><i><b class="${cls}" style="width:${Math.max(2, Math.min(100, value))}%"></b></i><span>${text}</span>${close}`;
 }
 
 const BAND = { fat: "fat", fit: "fit", thin: "thin", exhausted: "exhausted" };
@@ -289,6 +289,25 @@ const PACE_HINT: Record<PaceId, string> = {
   normal: "35 km a day, the everyday march",
   forced: "55 km a day for two or three days, then horses suffer",
 };
+// --- why the condition changes: yesterday's change split into its causes ---
+let showWhy = false;
+const signed = (v: number) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1);
+const SEASON_WORD = ["Winter", "Winter", "Early spring", "Spring", "Spring", "Summer", "Summer", "Summer", "Late summer", "Autumn", "Autumn", "Winter"];
+function whyText(d: ConditionChange) {
+  const month = dateOf(game).month;
+  const rows: [string, number][] = [
+    [`Grass here, ${grassText(d.density).toLowerCase()}`, d.grass],
+    [`${SEASON_WORD[month]} grass, ${Math.round(d.quality * 100)}% as good`, d.season],
+    [`March of ${fmt(d.km)} km`, d.march],
+    ["Captured grain", d.grain],
+    ["No water at the camp", d.dry],
+    [d.cap < 0 ? (d.total >= 0 ? "Horses put on flesh slowly" : "Already at their best") : "Horses lose at most 3 a day", d.cap],
+  ];
+  const shown = rows.filter(([, v]) => Math.abs(v) >= 0.05);
+  return `<dl class="why-list">${shown.map(([k, v]) => `<dt>${k}</dt><dd class="t-${v < 0 ? "bad" : "ok"}">${signed(v)}</dd>`).join("")}
+    <dt><b>Yesterday</b></dt><dd><b>${signed(d.total)}</b></dd></dl>`;
+}
+
 function renderColumn() {
   const c = game.columns[0];
   const camp = campSite(c);
@@ -312,7 +331,9 @@ function renderColumn() {
       <div><b>${fmt(c.sheep)}</b><span>sheep</span></div>
       <div><b>${perMan.toFixed(1)}</b><span>per man</span></div>
     </div>
-    ${bar("Condition", c.condition, level(c.condition, 40, 20), BAND[conditionBand(c.condition)])}
+    ${bar("Condition", c.condition, level(c.condition, 40, 20), `${BAND[conditionBand(c.condition)]} ${showWhy ? "▴" : "▾"}`,
+      `<button class="bar why" aria-expanded="${showWhy}" title="Why the condition changes">`, "</button>")}
+    ${!showWhy ? "" : c.lastDay ? whyText(c.lastDay) : `<p class="why-list">The horses gain or lose condition each night, from the grass they found and the road they covered.</p>`}
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
@@ -334,6 +355,7 @@ function renderColumn() {
   if (!changed) return;
   const col = $("column");
   col.querySelector<HTMLButtonElement>(".fold")!.onclick = () => { folded = !folded; col.classList.toggle("collapsed", folded); render(); };
+  col.querySelector<HTMLButtonElement>(".why")!.onclick = () => { showWhy = !showWhy; render(); };
   col.querySelectorAll<HTMLButtonElement>("[data-pace]").forEach(b => { b.onclick = () => { setPace(game, 0, b.dataset.pace as PaceId); render(); }; });
   col.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, 0); render(); });
   col.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, 0); setPlaying(true); });

@@ -45,6 +45,31 @@ export interface Column {
   grain: number;
   /** last values reported in the log, to report only changes */
   reported: { band: ConditionBand; foodDays: number; starving: boolean };
+  /** why the horses' condition changed on the last day, or null before the first night */
+  lastDay: ConditionChange | null;
+}
+
+/**
+ * The day's change in condition split into its causes. Each term is the difference it made
+ * compared with the line before, so the terms add up to the total.
+ */
+export interface ConditionChange {
+  /** resting all day on this grass at its summer best */
+  grass: number;
+  /** what the season takes away from the grass (0 in summer) */
+  season: number;
+  /** marching: less time to graze, and more effort */
+  march: number;
+  /** captured grain makes up for poor grass */
+  grain: number;
+  /** horses gain flesh slowly, lose it fast, and stay within 0-100: the part of the change these limits take away */
+  cap: number;
+  /** a camp without water */
+  dry: number;
+  total: number;
+  km: number;
+  density: number;
+  quality: number;
 }
 
 export interface SiteState {
@@ -95,7 +120,7 @@ export function newGame(sheep = 0): GameState {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
     condition: c.condition, fatigue: 0, pace: "normal", at: SCENARIO.base, cameFrom: null, leg: null, route: [], halted: false,
-    today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false },
+    today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
   const sites: Record<string, SiteState> = {};
@@ -495,20 +520,34 @@ function endOfDay(s: GameState) {
     const need = R.HORSE_NEED_REST + R.HORSE_NEED_PER_KM * c.today.km * horseWork(c);
     const grazeHours = Math.min(R.MAX_GRAZE_HOURS, 24 - c.today.marchHours - R.CAMP_HOURS) + c.today.marchHours * pace.grazeWhileMarching;
     const density = pastureDensity(site, month, st);
-    const eaten = ((R.GRAZE_MAX_KG_PER_HOUR * density) / (density + R.GRAZE_HALF_DENSITY)) * grazeHours;
+    const perHour = (R.GRAZE_MAX_KG_PER_HOUR * density) / (density + R.GRAZE_HALF_DENSITY);
+    const eaten = perHour * grazeHours;
+    const change = (ratio: number) => R.CONDITION_RATE * (ratio - 1);
+    // the same day without marching, and without the season, tells what each of them costs
+    const restEaten = perHour * Math.min(R.MAX_GRAZE_HOURS, 24 - R.CAMP_HOURS);
+    const grass = change(restEaten / R.HORSE_NEED_REST);
+    const seasonal = change((restEaten * quality) / R.HORSE_NEED_REST);
     let ratio = (eaten * quality) / need;
+    const marched = change(ratio);
     if (c.grain > 0) {
       // captured grain: the horses are fed whatever the pasture
       ratio = Math.max(ratio, 1.5);
       c.grain = Math.max(0, c.grain - 1);
     }
-    const delta = R.CONDITION_RATE * (ratio - 1);
+    const delta = change(ratio);
+    const before = c.condition;
     c.condition = clamp(c.condition + clamp(delta, -R.CONDITION_MAX_LOSS, R.CONDITION_MAX_GAIN), 0, 100);
     st.grazed += (c.horses * eaten + c.sheep * R.SHEEP_GRAZE_KG) / 1000;
     if (!site.water) {
       c.fatigue = Math.min(100, c.fatigue + R.DRY_CAMP_FATIGUE);
       c.condition = Math.max(0, c.condition - R.DRY_CAMP_CONDITION);
     }
+    // the limit takes whatever the other terms do not explain: daily caps, and condition kept within 0-100
+    const dry = site.water ? 0 : -R.DRY_CAMP_CONDITION, total = c.condition - before;
+    c.lastDay = {
+      grass, season: seasonal - grass, march: marched - seasonal, grain: delta - marched, dry, cap: total - delta - dry, total,
+      km: c.today.km, density, quality,
+    };
 
     // horses: deaths
     let deaths = 0;
