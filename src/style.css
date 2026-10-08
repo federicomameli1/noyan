@@ -121,6 +121,7 @@ button.bar { width: 100%; padding: 2px 0; border: 0; text-align: left; color: in
 dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-variant-numeric: tabular-nums; }
 dt { color: var(--muted); }
 dd { margin: 0; }
+.saves { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
 .log { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
 .log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
 .log li.warning, .log li.alert { color: var(--bad); }
@@ -182,6 +183,8 @@ dd { margin: 0; }
 .mechanics li { padding-left: 14px; border-left: 2px solid var(--road); font-size: 14.5px; }
 .mechanics b { display: block; font: 1.2rem var(--f-map); font-weight: 400; color: var(--label); }
 .title .big { font-size: 17px; padding: 12px 40px; }
+.title-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.title .big:not(.primary) { background: color-mix(in srgb, var(--paper) 80%, transparent); }
 /* a period painting soaked into the map: its paper multiplies with the parchment and its edges fade out */
 .plate { position: absolute; right: 2vw; top: 50%; translate: 0 -50%; width: min(50vw, 820px); height: auto; mix-blend-mode: multiply; opacity: .92;
   mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%); -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%); }

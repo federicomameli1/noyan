@@ -645,6 +645,8 @@ export function createMap(opts: MapOptions): GameMap {
     resetView() { vb = { x: 0, y: 0, w: W, h: H }; clampVB(); vb.x = (W - vb.w) / 2; vb.y = (H - vb.h) / 2; setVB(); },
     setColumns(cols) {
       columnMarks = cols;
+      // a loaded game can have fewer columns than the one before it
+      columnGs.forEach((c, i) => { c.g.style.display = i < cols.length ? "" : "none"; });
       cols.forEach((m, i) => {
         const { g, name, bar } = columnG(i);
         if (name.textContent !== m.name) { name.textContent = m.name; g.setAttribute("aria-label", `${m.name}'s column`); }
