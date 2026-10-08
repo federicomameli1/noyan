@@ -171,8 +171,9 @@ export function createMap(opts: MapOptions): GameMap {
   const washG = el("g", { filter: "url(#wash)" }, landG);
   const cells = REGIONS.map((r, i) => {
     const p = el("path", { d: vor.renderCell(i), class: "region" }, washG);
-    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
-    p.addEventListener("pointermove", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
+    // "region" in the text, so it is not mistaken for the place next to it
+    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} region · pasture ${r.pasture}`, e); });
+    p.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     p.addEventListener("pointerleave", () => { tip.hidden = true; });
     p.addEventListener("click", () => { if (!moved) select(r); });
     return p;
@@ -342,12 +343,19 @@ export function createMap(opts: MapOptions): GameMap {
 
   // sites of the movement graph: clickable, labelled when they are towns or pastures
   const siteG = el("g", {}, world);
-  const selRing = el("circle", { r: 7, fill: "none", stroke: C("--label"), "stroke-width": 2, "pointer-events": "none" });
+  // the selection: a double ring in red ink, like a stamp, sized on the symbol it surrounds
+  const selRing = el("g", { fill: "none", stroke: C("--label"), "pointer-events": "none", filter: "url(#wobble)" });
+  const selInner = el("circle", { "stroke-width": 1.8 }, selRing), selOuter = el("circle", { "stroke-width": 0.9, "stroke-dasharray": "4 2.5" }, selRing);
+  const selMark: [SVGGElement, number, number] = [selRing, 0, 0];
+  markers.push(selMark);
+  const selSize = new Map<string, number>();
+  const KIND_TEXT: Record<Site["kind"], string> = { city: "town", pasture: "pasture", pass: "pass", junction: "crossroads" };
   const capitals = new Set(CITIES.filter(c => c.capital).map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
   graph?.sites.forEach(site => {
     const [x, y] = project(site.lon, site.lat);
     const g = el("g", { class: "site", tabindex: 0, role: "button", "aria-label": site.name }, siteG);
     const passDrawn = site.kind === "pass" && drawnPasses.has(site.id);
+    selSize.set(site.id, targets[site.id] || passDrawn ? 15 : site.kind === "junction" ? 7 : 10);
     if (targets[site.id] && !passDrawn) {
       el("circle", { cx: x, cy: y, r: 9, fill: "transparent" }, g);
       drawTarget(site.id, x, y, g);
@@ -375,7 +383,7 @@ export function createMap(opts: MapOptions): GameMap {
       toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
-    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, site.name), e); opts.onHoverSite?.(site); } });
+    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, `${site.name} · ${KIND_TEXT[site.kind]}`), e); opts.onHoverSite?.(site); } });
     g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
@@ -557,7 +565,13 @@ export function createMap(opts: MapOptions): GameMap {
     selectSite(id) {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
       selRing.style.display = site ? "" : "none";
-      if (site) { const [x, y] = project(site.lon, site.lat); selRing.setAttribute("cx", String(x)); selRing.setAttribute("cy", String(y)); }
+      if (site) {
+        const [x, y] = project(site.lon, site.lat), r = selSize.get(site.id) ?? 10;
+        selInner.setAttribute("r", String(r));
+        selOuter.setAttribute("r", String(r + 3.5));
+        selMark[1] = x; selMark[2] = y;
+        selRing.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, labelScale()))})`);
+      }
     },
     setColumnCondition(condition, level) {
       conditionBar.setAttribute("width", (25 * Math.max(0.04, Math.min(1, condition / 100))).toFixed(1));
