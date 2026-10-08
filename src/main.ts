@@ -1,9 +1,9 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  canBesiege, foodDays, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  canBesiege, foodDays, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, 
-  type CityState, type Column, type GameState, type LogEntry, type PaceId, type Site,
+  type CityState, type Column, type ConditionBand, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, mix, targetSymbol, type Layer } from "./ui/map";
 
@@ -164,6 +164,58 @@ function spoilsText(c: Column, city: CityState) {
 }
 const days = (d: number) => (d < 1 ? "less than a day" : `about ${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"}`);
 
+// --- forecasts: the game played forward on a copy, so the player sees the collapse before it comes ---
+const BAND_RANK: Record<ConditionBand, number> = { exhausted: 0, thin: 1, fit: 2, fat: 3 };
+const bandLevel = (b: ConditionBand) => (b === "exhausted" ? "bad" : b === "thin" ? "warn" : "ok");
+const forecasts = new Map<string, Forecast | null>();
+/** forecast for the first column, cached until the game moves on or the orders change */
+function cachedForecast(dest: string | null, maxDays: number) {
+  const c = game.columns[0];
+  const key = [game.hour, dest, maxDays, c.pace, c.halted, c.at, c.leg?.to, c.route.join(), c.siege, c.sheep].join("|");
+  if (!forecasts.has(key)) {
+    if (forecasts.size > 50) forecasts.clear();
+    forecasts.set(key, forecast(game, 0, dest, maxDays));
+  }
+  return forecasts.get(key)!;
+}
+/** forecast of a march to a site, long enough to arrive */
+const marchForecast = (id: string, planDays: number) => cachedForecast(id, Math.min(90, Math.ceil(planDays * 1.5) + 3));
+
+/** horses, food and losses when the column gets there, in one sentence */
+function arrivalText(f: Forecast) {
+  const c = game.columns[0];
+  const e = f.end;
+  const lost = c.horses - e.horses;
+  const parts = [`horses <b class="t-${bandLevel(e.band)}">${e.band}</b>${e.fatigue >= 85 ? ` but <b class="t-bad">spent</b>` : e.fatigue >= 60 ? ` but <b class="t-warn">worn</b>` : ""}`];
+  parts.push(e.starving ? `<b class="t-bad">men starving</b>` : `food for ${Math.floor(e.foodDays)} days`);
+  if (lost >= 0.01 * c.horses) parts.push(`<b class="t-warn">about ${fmt(lost)} horses lost</b>`);
+  return parts.join(", ");
+}
+
+const OUTLOOK_DAYS = 20;
+/** what the next days hold if the orders stay as they are */
+function outlookText() {
+  const c = game.columns[0];
+  const f = cachedForecast(null, OUTLOOK_DAYS);
+  if (!f) return "";
+  const now = conditionBand(c.condition);
+  const parts: string[] = [];
+  if (f.arrival !== null) {
+    const dest = graph.site(c.leg && !c.route.length ? c.leg.to : c.route.at(-1)!).name;
+    parts.push(`Reaches ${dest} in ${days(f.arrival)}: ${arrivalText(f)}.`);
+  }
+  const worse = f.days.find(d => BAND_RANK[d.band] < BAND_RANK[now] && d.band !== "fit");
+  const better = f.days.find(d => BAND_RANK[d.band] > BAND_RANK[now]);
+  if (worse && (f.arrival === null || worse.day <= f.arrival + 1)) parts.push(`Horses <b class="t-${bandLevel(worse.band)}">${worse.band}</b> in ${days(worse.day)} at this pace.`);
+  else if (better && f.arrival === null) parts.push(`Horses ${better.band} again in ${days(better.day)}.`);
+  const dying = f.days.find((d, i) => (i ? f.days[i - 1].horses : c.horses) - d.horses >= 0.005 * c.horses);
+  if (dying) parts.push(`<b class="t-warn">Horses die from ${dying.day <= 1 ? "today" : `day ${Math.round(dying.day)}`}.</b>`);
+  const hungry = f.days.find(d => d.starving);
+  if (hungry && !c.reported.starving) parts.push(`<b class="t-bad">Food runs out in ${days(hungry.day)}.</b>`);
+  if (!parts.length) parts.push(`Next ${OUTLOOK_DAYS} days: horses stay ${now}${hungry ? "" : ", food lasts"}.`);
+  return parts.join(" ");
+}
+
 function renderPlace() {
   const s = selected;
   if (!s) return;
@@ -181,8 +233,12 @@ function renderPlace() {
       : `<div class="route">A siege would take about ${siegeDays(c, city)} days${c.engineers ? " with your engineers" : ""}.</div>`;
   } else if (here) route = `<div class="route">${c.name}'s column is here.</div>`;
   else if (plan) {
-    const short = food < plan.days;
-    route = `<div class="route">${fmt(plan.km)} km, ${days(plan.days)} at the ${effectivePace(c)} pace.${short ? ` <b style="color:var(--bad)">Food lasts ${Math.floor(food)} days.</b>` : ""}</div>`;
+    // the forecast knows that tired horses slow down, so its arrival beats the plan's estimate
+    const f = marchForecast(s.id, plan.days);
+    const time = f?.arrival ?? plan.days;
+    const short = food < time;
+    const ahead = f ? `<br>${f.arrival === null ? `After ${Math.round(f.end.day)} days, still on the way` : "On arrival"}: ${arrivalText(f)}.` : "";
+    route = `<div class="route">${fmt(plan.km)} km, ${days(time)} at the ${effectivePace(c)} pace.${short ? ` <b class="t-bad">Food lasts ${Math.floor(food)} days.</b>` : ""}${ahead}</div>`;
   } else route = `<div class="route">No open road: a Jin fortress holds the way.</div>`;
   const changed = setHTML(info, `<button class="close icon" aria-label="Close">✕</button>
     <span class="label">${city ? (city.taken ? `${TYPE_NAME[city.type]}, taken` : TYPE_NAME[city.type]) : KIND[s.kind]}</span><h2>${s.name}</h2>
@@ -273,6 +329,7 @@ function renderColumn() {
         ${flockHere > 0 ? `<button id="take">Take ${fmt(flockHere)} sheep</button>` : ""}
       </div>
     </div>
+    <p class="outlook">${outlookText()}</p>
     <p class="hint">${c.sheep > 0 ? "The flock sets the pace. Leave it somewhere to march faster." : PACE_HINT[pace]}${speedFactor(c) < 1 ? `. Tired or thin horses: ${Math.round(PACES[pace].marchHours * PACES[pace].kmPerHour * speedFactor(c))} km a day.` : ""}</p>`);
   if (!changed) return;
   const col = $("column");
@@ -330,7 +387,10 @@ function renderPreview() {
   const c = game.columns[0];
   const plan = target && started ? planRoute(game, c, target.id) : null;
   map.setPreview(plan && plan.sites.length ? routePoints(c, plan.sites) : []);
-  if (hovered && plan && plan.sites.length) $("tip").textContent = `${hovered.name} · ${days(plan.days)}`;
+  if (hovered && plan && plan.sites.length) {
+    const f = marchForecast(hovered.id, plan.days);
+    $("tip").textContent = `${hovered.name} · ${days(f?.arrival ?? plan.days)}${f ? ` · horses ${f.end.band}${f.end.fatigue >= 85 ? " and spent" : ""} on arrival` : ""}`;
+  }
 }
 
 function render() {
@@ -344,6 +404,7 @@ function render() {
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
   const [lon, lat] = columnPosition(game.columns[0]);
   map.placeColumn(lon, lat);
+  map.setColumnCondition(game.columns[0].condition, bandLevel(conditionBand(game.columns[0].condition)));
   map.setTaken(Object.keys(game.cities).filter(id => game.cities[id].taken));
   renderRoute();
   renderColumn();

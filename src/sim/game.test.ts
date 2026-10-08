@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropFlock, effectivePace, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, step, stormCost, takeFlock, type GameState } from "./game";
+import { dropFlock, effectivePace, forecast, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, step, stormCost, takeFlock, type GameState } from "./game";
 import { RATIONS_PER_SHEEP, type PaceId } from "./constants";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
@@ -232,6 +232,38 @@ describe("fortresses", () => {
     orderStorm(t, 0);
     expect(t.cities.yanmen.taken).toBe(true);
     expect(col(t).men).toBe(3000 - stormCost({ ...t.cities.yanmen, progress: 0 }));
+  });
+});
+
+describe("forecasts", () => {
+  it("predicts the march to Taiyuan as it then happens, without changing the game", () => {
+    const s = fed("normal");
+    const before = JSON.stringify(s);
+    const f = forecast(s, 0, "taiyuan", 40)!;
+    expect(JSON.stringify(s)).toBe(before);
+    expect(f.arrival).not.toBeNull();
+    expect(f.arrival!).toBeLessThanOrEqual(f.end.day);
+    orderMarch(s, 0, "taiyuan");
+    for (let h = 0; h < f.end.day * 24; h++) step(s);
+    expect(col(s).at).toBe("taiyuan");
+    expect(f.end.condition).toBe(col(s).condition);
+    expect(f.end.horses).toBe(col(s).horses);
+  });
+
+  it("follows the current orders when given no destination", () => {
+    const s = fed("forced");
+    orderMarch(s, 0, "zhending");
+    const f = forecast(s, 0, null, 14)!;
+    // a long forced march kills horses: the forecast sees it coming
+    expect(f.days[0].horses).toBe(12000);
+    expect(f.days.at(-1)!.horses).toBeLessThan(12000 * 0.9);
+  });
+
+  it("has no arrival for a column that stays put", () => {
+    const s = fed("normal");
+    const f = forecast(s, 0, null, 5)!;
+    expect(f.arrival).toBeNull();
+    expect(f.days).toHaveLength(5);
   });
 });
 

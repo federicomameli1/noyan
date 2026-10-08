@@ -40,6 +40,8 @@ export interface GameMap {
   selectSite(id: string | null): void;
   /** zooms onto a (lon, lat) box */
   focus(lon0: number, lat0: number, lon1: number, lat1: number): void;
+  /** horse condition (0-100) as a small bar under the column's name, coloured by level */
+  setColumnCondition(condition: number, level: "ok" | "warn" | "bad"): void;
   /** strongholds already taken: drawn in Mongol colours */
   setTaken(ids: readonly string[]): void;
 }
@@ -373,9 +375,8 @@ export function createMap(opts: MapOptions): GameMap {
       toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
-    const show = (e: PointerEvent) => { if (!drag) showTip(tipText(site.id, site.name, site.name), e); };
-    g.addEventListener("pointerenter", e => { show(e); if (!drag) opts.onHoverSite?.(site); });
-    g.addEventListener("pointermove", show);
+    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, site.name), e); opts.onHoverSite?.(site); } });
+    g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
     g.addEventListener("click", pick);
@@ -436,6 +437,9 @@ export function createMap(opts: MapOptions): GameMap {
   const column = el("g", { "pointer-events": "none" }, world);
   el("g", {}, column).innerHTML = helmet();
   el("text", { x: 17, y: -10, class: "city", style: "font-weight:600;font-size:15px;stroke-width:3px" }, column).textContent = "Muqali";
+  // the horses' condition at a glance, without opening a panel
+  el("rect", { x: -13, y: 12, width: 26, height: 5, rx: 1.5, fill: paper, stroke: ink, "stroke-width": 0.7 }, column);
+  const conditionBar = el("rect", { x: -12.5, y: 12.5, width: 25, height: 4, rx: 1.2 }, column);
 
   // paper: grain, stains and darkened edges on top of everything
   el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, filter: "url(#blotch)", "pointer-events": "none", style: "mix-blend-mode:multiply" }, world);
@@ -450,10 +454,11 @@ export function createMap(opts: MapOptions): GameMap {
     });
     selPath.setAttribute("d", selected ? vor.renderCell(selected.id) : "");
   }
-  function showTip(text: string, e: PointerEvent) {
+  /** null keeps the text, so the game can add to it on hover (a route's length, the horses on arrival) */
+  function showTip(text: string | null, e: PointerEvent) {
     const b = stage.getBoundingClientRect();
     tip.hidden = false;
-    tip.textContent = text;
+    if (text !== null) tip.textContent = text;
     tip.style.left = e.clientX - b.left + "px";
     tip.style.top = e.clientY - b.top + "px";
   }
@@ -553,6 +558,10 @@ export function createMap(opts: MapOptions): GameMap {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
       selRing.style.display = site ? "" : "none";
       if (site) { const [x, y] = project(site.lon, site.lat); selRing.setAttribute("cx", String(x)); selRing.setAttribute("cy", String(y)); }
+    },
+    setColumnCondition(condition, level) {
+      conditionBar.setAttribute("width", (25 * Math.max(0.04, Math.min(1, condition / 100))).toFixed(1));
+      conditionBar.setAttribute("fill", C(`--${level}`));
     },
     setTaken(ids) {
       for (const [id, g] of targetGs) g.classList.toggle("taken", ids.includes(id));

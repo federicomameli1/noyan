@@ -245,6 +245,59 @@ export function orderMarch(s: GameState, ci: number, dest: string): boolean {
   return true;
 }
 
+// --- forecasts ---
+
+export interface ForecastDay {
+  /** days from now, at the end of that day */
+  day: number;
+  condition: number;
+  band: ConditionBand;
+  fatigue: number;
+  horses: number;
+  foodDays: number;
+  starving: boolean;
+}
+
+export interface Forecast {
+  /** the column at the end of each day */
+  days: ForecastDay[];
+  /** days until the column reaches the end of its route, or null if it does not within the horizon or has nowhere to go */
+  arrival: number | null;
+  /** the column at the end of the arrival day, or at the horizon */
+  end: ForecastDay;
+}
+
+/**
+ * Plays the game forward on a copy, without touching the real one: what happens to a column
+ * if it keeps its orders, or if it marches to `dest`. Stops at the end of the arrival day,
+ * after `maxDays`, or when the copy of the game ends. Null if there is no route to `dest`.
+ */
+export function forecast(s: GameState, ci: number, dest: string | null, maxDays: number): Forecast | null {
+  const copy: GameState = JSON.parse(JSON.stringify({ ...s, log: [] }));
+  const c = copy.columns[ci];
+  if (dest !== null && c.at !== dest && !orderMarch(copy, ci, dest)) return null;
+  const snapshot = (): ForecastDay => ({
+    day: (copy.hour - s.hour) / 24, condition: c.condition, band: conditionBand(c.condition), fatigue: c.fatigue,
+    horses: c.horses, foodDays: foodDays(c), starving: c.reported.starving,
+  });
+  const days: ForecastDay[] = [];
+  let arrivalHour: number | null = null;
+  const going = isMoving(c);
+  for (let h = 0; h < maxDays * 24 && !copy.over; h++) {
+    step(copy);
+    if (going && arrivalHour === null && !c.halted && !c.leg && !c.route.length) arrivalHour = copy.hour;
+    if (dateOf(copy).hour === 0) {
+      days.push(snapshot());
+      if (arrivalHour !== null) break;
+    }
+  }
+  return {
+    days,
+    arrival: arrivalHour === null ? null : (arrivalHour - s.hour) / 24,
+    end: days.at(-1) ?? snapshot(),
+  };
+}
+
 function routeKm(p: string[]): number {
   let km = 0;
   for (let i = 1; i < p.length; i++) km += linkBetween(graph, p[i - 1], p[i])!.km;
