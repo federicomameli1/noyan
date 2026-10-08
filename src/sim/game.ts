@@ -49,6 +49,8 @@ export interface SiteState {
 export interface LogEntry {
   hour: number;
   text: string;
+  /** entries the player should not miss: arrivals and alerts pause the game, warnings do not */
+  kind?: "arrival" | "alert" | "warning";
 }
 
 export interface GameState {
@@ -131,25 +133,68 @@ export function columnPosition(c: Column): [number, number] {
 
 // --- orders ---
 
-/** Sends a column to a site along the fastest route. Returns false if there is no route. */
-export function orderMarch(s: GameState, ci: number, dest: string): boolean {
-  const c = s.columns[ci];
+export interface RoutePlan {
+  /** true if a column halfway along a link turns back */
+  turnBack: boolean;
+  /** sites to reach in order, starting with the end of the current leg if on one */
+  sites: string[];
+  /** km left to march */
+  km: number;
+  /** days of marching at the column's current pace and state, roughly */
+  days: number;
+}
+
+/** Fastest route for a column to a site, without changing anything. Null if there is none. */
+export function planRoute(c: Column, dest: string): RoutePlan | null {
+  let turnBack = false, sites: string[], km: number;
   if (c.at) {
-    if (c.at === dest) { c.route = []; return true; }
+    if (c.at === dest) return { turnBack, sites: [], km: 0, days: 0 };
     const p = findPath(graph, c.at, dest);
-    if (!p) return false;
-    c.route = p.slice(1);
+    if (!p) return null;
+    sites = p.slice(1);
+    km = routeKm(p);
   } else {
     // halfway along a link: go on, or turn back if that is shorter
     const l = c.leg!;
     const ahead = findPath(graph, l.to, dest), back = findPath(graph, l.from, dest);
-    if (!ahead && !back) return false;
+    if (!ahead && !back) return null;
     const cost = (p: string[] | null, start: number) => (p ? start + routeKm(p) : Infinity);
-    if (cost(back, l.done) < cost(ahead, l.km - l.done)) {
-      c.leg = { from: l.to, to: l.from, done: l.km - l.done, km: l.km };
-      c.route = back!.slice(1);
-    } else c.route = ahead!.slice(1);
+    turnBack = cost(back, l.done) < cost(ahead, l.km - l.done);
+    sites = turnBack ? back! : ahead!;
+    km = cost(sites, turnBack ? l.done : l.km - l.done);
   }
+  return { turnBack, sites, km, days: marchDays(c, turnBack, sites) };
+}
+
+function marchDays(c: Column, turnBack: boolean, sites: string[]): number {
+  const pace = R.PACES[effectivePace(c)];
+  const kmh = pace.kmPerHour * speedFactor(c);
+  let hours = 0, from = c.at;
+  if (c.leg) {
+    const link = linkBetween(graph, c.leg.from, c.leg.to)!;
+    hours += (turnBack ? c.leg.done : c.leg.km - c.leg.done) / (kmh * R.LINKS[link.kind].speed);
+    from = turnBack ? c.leg.from : c.leg.to;
+  }
+  for (const to of sites) {
+    if (to === from) continue;
+    const link = linkBetween(graph, from!, to)!;
+    hours += link.km / (kmh * R.LINKS[link.kind].speed);
+    from = to;
+  }
+  return hours / pace.marchHours;
+}
+
+/** Sends a column to a site along the fastest route. Returns false if there is no route. */
+export function orderMarch(s: GameState, ci: number, dest: string): boolean {
+  const c = s.columns[ci];
+  const plan = planRoute(c, dest);
+  if (!plan) return false;
+  if (plan.turnBack) {
+    const l = c.leg!;
+    c.leg = { from: l.to, to: l.from, done: l.km - l.done, km: l.km };
+  }
+  // the first site of the plan is where the current leg ends: the leg itself takes the column there
+  c.route = c.leg ? plan.sites.slice(1) : plan.sites;
   c.halted = false;
   return true;
 }
@@ -192,8 +237,8 @@ export function takeFlock(s: GameState, ci: number): boolean {
 
 // --- simulation ---
 
-function log(s: GameState, text: string) {
-  s.log.push({ hour: s.hour, text });
+function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
+  s.log.push(kind ? { hour: s.hour, text, kind } : { hour: s.hour, text });
 }
 
 /** Advances the game by one hour. */
@@ -235,7 +280,7 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
     if (c.leg.done >= c.leg.km - 1e-9) {
       c.at = c.leg.to;
       c.leg = null;
-      if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(c.at).name}.`);
+      if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(c.at).name}.`, "arrival");
     }
   }
 }
@@ -293,7 +338,7 @@ function endOfDay(s: GameState) {
     c.today = { marchHours: 0, km: 0 };
     if (c.horses < c.men && isMoving(c)) {
       orderHalt(s, s.columns.indexOf(c));
-      log(s, `${c.name} has fewer horses than men and cannot march.`);
+      log(s, `${c.name} has fewer horses than men and cannot march.`, "alert");
     }
   }
   if (month >= 3 && month <= 8) for (const st of Object.values(s.sites)) st.grazed *= 1 - R.REGROWTH_PER_DAY;
@@ -304,16 +349,16 @@ const BAND_TEXT: Record<ConditionBand, string> = { fat: "fat", fit: "fit", thin:
 function report(s: GameState, c: Column, dead: number, eaten: number, starving: boolean) {
   const band = conditionBand(c.condition);
   if (band !== c.reported.band) {
-    log(s, `${c.name}'s horses are now ${BAND_TEXT[band]}.`);
+    log(s, `${c.name}'s horses are now ${BAND_TEXT[band]}.`, band === "thin" || band === "exhausted" ? "alert" : undefined);
     c.reported.band = band;
   }
   const days = foodDays(c);
-  if (c.reported.foodDays > 5 && days <= 5 && days > 0) log(s, `${c.name} has food for 5 days or less.`);
+  if (c.reported.foodDays > 5 && days <= 5 && days > 0) log(s, `${c.name} has food for 5 days or less.`, "alert");
   c.reported.foodDays = days;
-  if (eaten > 0) log(s, `${c.name}'s men eat ${eaten} horses.`);
-  if (dead >= 10) log(s, `${dead} of ${c.name}'s horses die.`);
+  if (eaten > 0) log(s, `${c.name}'s men eat ${eaten} horses.`, "warning");
+  if (dead >= 10) log(s, `${dead} of ${c.name}'s horses die.`, "warning");
   if (starving !== c.reported.starving) {
-    log(s, starving ? `${c.name}'s men are starving.` : `${c.name}'s men have food again.`);
+    log(s, starving ? `${c.name}'s men are starving.` : `${c.name}'s men have food again.`, starving ? "alert" : undefined);
     c.reported.starving = starving;
   }
 }

@@ -9,64 +9,63 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
   </head>
   <body>
-    <div class="wrap">
-      <header>
-        <span class="label">Prototype · layer 0</span>
-        <h1>Into Shanxi, 1218</h1>
-        <p class="note">Take Muqali's column from Datong to Taiyuan and keep the horses alive. Click a place on the map to march there. Horses only eat by grazing: every hour on the road is an hour less to eat.</p>
+    <main class="stage" id="stage">
+      <div class="tip" id="tip" hidden></div>
+
+      <header class="hud topbar">
+        <b class="brand">Noyan</b>
+        <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
+        <div class="seg" role="group" aria-label="Time">
+          <button id="play" class="icon" aria-label="Pause">❚❚</button>
+          <span class="seg" id="speeds"></span>
+        </div>
+        <button id="menu-btn" class="icon" aria-label="Map layers and legend" aria-expanded="false">☰</button>
       </header>
 
-      <div class="bar" id="start">
-        <span>Take sheep along:</span>
-        <div class="group" role="group" aria-label="Flock" id="flocks"></div>
-        <button id="begin" class="primary">Start</button>
+      <div class="toasts" id="toasts" aria-live="polite"></div>
+
+      <aside class="hud panel column" id="column" aria-label="Column"></aside>
+      <aside class="hud panel place" id="info" aria-label="Selected place" hidden></aside>
+
+      <div class="hud panel menu" id="menu" hidden>
+        <h3>Map</h3>
+        <div class="seg wrap" id="layers" role="group" aria-label="Layer">
+          <button data-layer="map" aria-pressed="false">Plain</button>
+          <button data-layer="terrain" aria-pressed="false">Terrain</button>
+          <button data-layer="pasture" aria-pressed="true">Pasture</button>
+          <button data-layer="political" aria-pressed="false">Political</button>
+          <button data-layer="diplomatic" aria-pressed="false">Diplomatic</button>
+        </div>
+        <h3 id="leg-title">Legend</h3>
+        <dl id="legend"></dl>
+        <h3>Journal</h3>
+        <ol class="log" id="log"></ol>
       </div>
 
-      <div class="bar" id="controls" hidden>
-        <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
-        <div class="group" role="group" aria-label="Time">
-          <button id="play" aria-pressed="false">Play</button>
-          <span class="group" id="speeds"></span>
-        </div>
-        <div class="group" role="group" aria-label="Pace" id="paces">
-          <button data-pace="grazing">Grazing</button>
-          <button data-pace="normal">Normal</button>
-          <button data-pace="forced">Forced</button>
-        </div>
-        <div class="group">
-          <button id="halt">Halt</button>
-          <button id="drop">Leave flock</button>
-          <button id="take">Take flock</button>
-        </div>
+      <div class="zoom">
+        <button id="zin" class="icon" aria-label="Zoom in">+</button>
+        <button id="zout" class="icon" aria-label="Zoom out">−</button>
+        <button id="zreset" class="icon" aria-label="Back to the column" style="font-size: 13px">⌖</button>
       </div>
 
-      <div class="group" id="layers" role="group" aria-label="Layer">
-        <button data-layer="map" aria-pressed="false">Map only</button>
-        <button data-layer="terrain" aria-pressed="false">Terrain</button>
-        <button data-layer="pasture" aria-pressed="true">Pasture</button>
-        <button data-layer="political" aria-pressed="false">Political</button>
-        <button data-layer="diplomatic" aria-pressed="false">Diplomatic</button>
-      </div>
-
-      <div class="stage" id="stage">
-        <div class="zoom">
-          <button id="zin" aria-label="Zoom in">+</button>
-          <button id="zout" aria-label="Zoom out">−</button>
-          <button id="zreset" aria-label="Full view" style="font-size: 13px">⤢</button>
+      <div class="modal" id="start">
+        <div class="hud panel card">
+          <span class="label">Layer 0 prototype</span>
+          <h1>Into Shanxi, 1218</h1>
+          <p>Genghis Khan has gone west and left Muqali to fight the Jin. Take his column from Datong to Taiyuan across the mountain passes, and keep the horses alive until spring.</p>
+          <ul>
+            <li>Horses only eat by grazing: every hour on the road is an hour less to eat.</li>
+            <li>Forced marches pay off for two or three days, then tired horses slow down and die.</li>
+            <li>Sheep are food on the hoof, but the column moves at their pace.</li>
+            <li>Winter grass is scarce and poor. A camp that stays put eats the grass around it.</li>
+          </ul>
+          <p class="label">Take sheep along</p>
+          <div class="seg" role="group" aria-label="Flock" id="flocks"></div>
+          <button id="begin" class="primary big">Start the campaign</button>
+          <p class="note">Click a place to choose where to march. Space pauses, 1 2 3 set the speed.</p>
         </div>
-        <div class="cartouche"><b>Map of Northern China</b><i>at the time of Muqali's campaign, year 1218</i></div>
-        <div class="tip" id="tip" hidden></div>
       </div>
-
-      <div class="row">
-        <div class="info" id="column"></div>
-        <div class="info" id="info"><h3>No place selected</h3><p class="note">Click a place on the map to see its pasture and to march there.</p></div>
-      </div>
-      <div class="row">
-        <div class="info"><h3>Journal</h3><ol class="log" id="log"></ol></div>
-        <div class="info"><h3 id="leg-title">Legend</h3><dl id="legend"></dl></div>
-      </div>
-    </div>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
