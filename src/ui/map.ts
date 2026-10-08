@@ -1,7 +1,7 @@
 // Map view: draws the hand-drawn map in SVG and handles zoom, panning and selection.
 // It reads data from the simulation (src/sim) and never changes it.
 import { Delaunay } from "d3-delaunay";
-import { CITIES, REGIONS, ROADS, project, type Graph, type Point, type Region, type Site } from "../sim";
+import { CITIES, REGIONS, ROADS, project, type CityType, type Graph, type Point, type Region, type Site } from "../sim";
 import { GEO, type Pass } from "./geo";
 
 export type Layer = "map" | "terrain" | "pasture" | "political" | "diplomatic";
@@ -22,6 +22,8 @@ export interface MapOptions {
   onSelectSite?: (s: Site) => void;
   /** pointer entering (site) or leaving (null) a site */
   onHoverSite?: (s: Site | null) => void;
+  /** Jin strongholds that can be besieged, by site id */
+  targets?: Record<string, CityType>;
 }
 
 export interface GameMap {
@@ -38,6 +40,8 @@ export interface GameMap {
   selectSite(id: string | null): void;
   /** zooms onto a (lon, lat) box */
   focus(lon0: number, lat0: number, lon1: number, lat1: number): void;
+  /** strongholds already taken: drawn in Mongol colours */
+  setTaken(ids: readonly string[]): void;
 }
 
 const NS = "http://www.w3.org/2000/svg";
@@ -79,6 +83,36 @@ export function helmet(): string {
   <circle cx="0" cy="-27.8" r="1.3" fill="${ink}"/>
   <rect x="-9.5" y="-7.2" width="19" height="3" rx="1.2" fill="${label}" stroke="${ink}" stroke-width=".8"/>`;
 }
+
+/** Wall outline with merlons on top, centred on (0, 0). */
+function battlement(w: number, h: number, n: number, dy = 0) {
+  const x0 = -w / 2, top = -h / 2 + dy, mw = w / (2 * n - 1), notch = mw * 0.8;
+  let d = `M${x0},${h / 2 + dy}V${top}`;
+  for (let i = 0; i < 2 * n - 1; i++) {
+    d += `H${(x0 + (i + 1) * mw).toFixed(2)}`;
+    if (i < 2 * n - 2) d += `V${(i % 2 === 0 ? top + notch : top).toFixed(2)}`;
+  }
+  return d + `V${h / 2 + dy}Z`;
+}
+
+/** Symbol of a Jin stronghold, centred on (0, 0). Colours come from CSS, so a taken one turns blue. */
+export function targetSymbol(type: CityType): string {
+  switch (type) {
+    case "town":
+      return `<path class="tg" d="${battlement(10, 8, 2)}"/>`;
+    case "walled":
+      return `<path class="tg" d="${battlement(15, 11, 3)}"/><path class="tg-fill" d="M-2.2,5.5V2.4a2.2,2.2 0 0 1 4.4,0V5.5Z"/>`;
+    case "fortress":
+      return `<path class="tg" d="M-9,8.5L-5,4.5L5,4.5L9,8.5Z"/><path class="tg" d="${battlement(9, 13, 2, -2)}"/>`
+        + `<path class="tg-fill" d="M-.6,-8.5V-15L5,-13.2L-.6,-11.4Z"/><path class="tg-fill" d="M-1.5,4.5V0.5a1.5,1.5 0 0 1 3,0V4.5Z"/>`;
+  }
+}
+
+export const TARGET_TEXT: Record<CityType, string> = {
+  town: "Jin town, can be besieged",
+  walled: "Jin walled city, can be besieged",
+  fortress: "Jin fortress, closes the pass",
+};
 
 export function createMap(opts: MapOptions): GameMap {
   const { W, H } = GEO;
@@ -204,15 +238,36 @@ export function createMap(opts: MapOptions): GameMap {
     }
     return d;
   }
-  const roadG = el("g", { class: "fixed-stroke", fill: "none", stroke: C("--road"), "stroke-width": 1.4, "stroke-dasharray": "5 4", "stroke-linecap": "round", "stroke-opacity": 0.55, "pointer-events": "none", filter: "url(#wobble)" }, world);
-  roads.forEach(r => el("path", { d: smooth(r) }, roadG));
-
-  // movement graph: links and route, under passes and cities
+  // the old main roads are drawn only outside the area of the movement graph, which has its own roads
   const graph = opts.graph;
-  const linkG = el("g", { class: "fixed-stroke", fill: "none", stroke: ink, "stroke-linecap": "round", "pointer-events": "none", "stroke-opacity": 0.55 }, world);
+  const box = graph && graph.sites.reduce((b, s) => {
+    const [x, y] = project(s.lon, s.lat);
+    return { x0: Math.min(b.x0, x - 25), y0: Math.min(b.y0, y - 25), x1: Math.max(b.x1, x + 25), y1: Math.max(b.y1, y + 25) };
+  }, { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+  const inBox = ([x, y]: Point) => !!box && x > box.x0 && x < box.x1 && y > box.y0 && y < box.y1;
+  const roadG = el("g", { class: "fixed-stroke", fill: "none", stroke: C("--road"), "stroke-width": 1.4, "stroke-dasharray": "5 4", "stroke-linecap": "round", "stroke-opacity": 0.55, "pointer-events": "none", filter: "url(#wobble)" }, world);
+  roads.forEach(r => {
+    let run: Point[] = [];
+    const flush = () => { if (run.length > 1) el("path", { d: smooth(run) }, roadG); run = []; };
+    r.forEach((q, i) => {
+      if (i === 0) { run = [q]; return; }
+      const mid: Point = [(r[i - 1][0] + q[0]) / 2, (r[i - 1][1] + q[1]) / 2];
+      if (inBox(mid)) { flush(); run = [q]; } else run.push(q);
+    });
+    flush();
+  });
+
+  // movement graph: links and route, under passes and cities.
+  // Roads in red ink like the old roads, tracks dashed and mountain paths dotted, all thin and light.
+  const linkG = el("g", { class: "fixed-stroke", fill: "none", "stroke-linecap": "round", "pointer-events": "none" }, world);
   graph?.links.forEach(l => {
     const [ax, ay] = project(graph.site(l.a).lon, graph.site(l.a).lat), [bx, by] = project(graph.site(l.b).lon, graph.site(l.b).lat);
-    el("path", { d: `M${ax.toFixed(1)},${ay.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`, "stroke-width": l.kind === "road" ? 1.6 : 1.3, "stroke-dasharray": l.kind === "road" ? "" : l.kind === "track" ? "6 4" : "1.5 4" }, linkG);
+    const road = l.kind === "road";
+    el("path", {
+      d: `M${ax.toFixed(1)},${ay.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`,
+      stroke: road ? C("--road") : ink, "stroke-opacity": road ? 0.6 : 0.42, "stroke-width": road ? 1.5 : 1.1,
+      "stroke-dasharray": road ? "" : l.kind === "track" ? "5 4" : "1 4",
+    }, linkG);
   });
   const previewPath = el("path", { class: "fixed-stroke", fill: "none", stroke: C("--label"), "stroke-width": 3, "stroke-opacity": 0.4, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "3 5", "pointer-events": "none" }, world);
   const routePath = el("path", { class: "fixed-stroke", fill: "none", stroke: C("--label"), "stroke-width": 3.5, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "9 5", "pointer-events": "none" }, world);
@@ -230,18 +285,35 @@ export function createMap(opts: MapOptions): GameMap {
   const passG = el("g", {}, world);
   /** pass symbols shrink with the labels when zooming in */
   const passGlyphs: [SVGGElement, number, number][] = [];
+  /** symbols drawn around (0, 0) and placed with a transform, scaled the same way */
+  const markers: [SVGGElement, number, number][] = [];
+  const targets = opts.targets ?? {};
+  const targetGs = new Map<string, SVGGElement>();
+  function drawTarget(id: string, x: number, y: number, parent: Element) {
+    const t = el("g", { class: "target" }, parent);
+    t.innerHTML = targetSymbol(targets[id]);
+    markers.push([t, x, y]);
+    targetGs.set(id, t);
+  }
+  const tipText = (id: string, name: string, fallback: string) =>
+    targets[id] ? `${name} · ${targetGs.get(id)?.classList.contains("taken") ? "taken" : TARGET_TEXT[targets[id]]}` : fallback;
   GEO.passes.forEach(p => {
     const g = el("g", { class: "pass", tabindex: 0, role: "button", "aria-label": p.name }, passG);
-    const glyph = el("g", {}, g);
-    passGlyphs.push([glyph, p.x, p.y]);
-    el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, glyph);
-    el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, glyph);
+    if (targets[p.id]) {
+      el("circle", { cx: p.x, cy: p.y, r: 12, fill: "transparent" }, g);
+      drawTarget(p.id, p.x, p.y, g);
+    } else {
+      const glyph = el("g", {}, g);
+      passGlyphs.push([glyph, p.x, p.y]);
+      el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, glyph);
+      el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, glyph);
+    }
     const [dx, dy, anc] = PASS_LABEL[p.id] ?? [10, -8, "start"];
     const t = el("text", { x: p.x + dx, y: p.y + dy, "text-anchor": anc, class: "pname" }, g);
     t.textContent = p.name.replace(" Pass", "");
     obstacles.push({ x: p.x - 12, y: p.y - 12, width: 24, height: 24 });
     toPlace.push({ el: t, ax: p.x, ay: p.y, pri: 0, cands: [[dx, dy, anc], [15, 4, "start"], [-15, 4, "end"], [0, -17, "middle"], [0, 25, "middle"], [13, -10, "start"], [-13, -10, "end"], [13, 20, "start"], [-13, 20, "end"]] });
-    const show = (e: PointerEvent) => { if (!drag) showTip(p.name + " · pass", e); };
+    const show = (e: PointerEvent) => { if (!drag) showTip(tipText(p.id, p.name, p.name + " · pass"), e); };
     g.addEventListener("pointerenter", show);
     g.addEventListener("pointermove", show);
     g.addEventListener("pointerleave", () => { tip.hidden = true; });
@@ -252,7 +324,9 @@ export function createMap(opts: MapOptions): GameMap {
 
   // cities
   const cityG = el("g", { "pointer-events": "none" }, world);
+  const graphNames = new Set(graph?.sites.map(s => s.name));
   CITIES.forEach(c => {
+    if (graphNames.has(c.name)) return;
     const [x, y] = project(c.lon, c.lat);
     if (c.capital) {
       el("circle", { cx: x, cy: y, r: 5, fill: paper, stroke: ink, "stroke-width": 1.2 }, cityG);
@@ -267,28 +341,39 @@ export function createMap(opts: MapOptions): GameMap {
   // sites of the movement graph: clickable, labelled when they are towns or pastures
   const siteG = el("g", {}, world);
   const selRing = el("circle", { r: 7, fill: "none", stroke: C("--label"), "stroke-width": 2, "pointer-events": "none" });
-  const drawnCities = new Set(CITIES.map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
+  const capitals = new Set(CITIES.filter(c => c.capital).map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
   graph?.sites.forEach(site => {
     const [x, y] = project(site.lon, site.lat);
     const g = el("g", { class: "site", tabindex: 0, role: "button", "aria-label": site.name }, siteG);
-    el("circle", { cx: x, cy: y, r: 7, fill: "transparent" }, g);
-    if (site.kind === "pasture") {
-      el("path", { d: `M${x - 4},${y - 2}L${x - 1},${y + 2}L${x + 1},${y - 3}M${x + 1},${y + 2}L${x + 4},${y - 2}`, fill: "none", stroke: C("--p-high"), "stroke-width": 1.4, "stroke-linecap": "round" }, g);
-    } else if (site.kind === "pass" && !drawnPasses.has(site.id)) {
-      el("path", { d: `M${x - 4},${y - 4}Q${x - 1},${y} ${x - 4},${y + 4}M${x + 4},${y - 4}Q${x + 1},${y} ${x + 4},${y + 4}`, fill: "none", stroke: C("--road"), "stroke-width": 1.8, "stroke-linecap": "round" }, g);
-    } else if (site.kind === "junction") {
-      el("circle", { cx: x, cy: y, r: 2.2, fill: paper, stroke: ink, "stroke-width": 0.9 }, g);
-    } else if (site.kind === "city" && !drawnCities.has(site.name)) {
-      el("rect", { x: x - 2.5, y: y - 2.5, width: 5, height: 5, fill: paper, stroke: ink, "stroke-width": 1 }, g);
+    const passDrawn = site.kind === "pass" && drawnPasses.has(site.id);
+    if (targets[site.id] && !passDrawn) {
+      el("circle", { cx: x, cy: y, r: 9, fill: "transparent" }, g);
+      drawTarget(site.id, x, y, g);
+    } else {
+      const mk = el("g", {}, g);
+      markers.push([mk, x, y]);
+      el("circle", { r: 8, fill: "transparent" }, mk);
+      if (site.kind === "pasture") {
+        el("path", { d: "M-4,-2L-1,2L1,-3M1,2L4,-2", fill: "none", stroke: C("--p-high"), "stroke-width": 1.4, "stroke-linecap": "round" }, mk);
+      } else if (site.kind === "pass" && !passDrawn) {
+        el("path", { d: "M-4,-4Q-1,0 -4,4M4,-4Q1,0 4,4", fill: "none", stroke: C("--road"), "stroke-width": 1.8, "stroke-linecap": "round" }, mk);
+      } else if (site.kind === "junction") {
+        el("circle", { r: 1.8, fill: ink, "fill-opacity": 0.55 }, mk);
+      } else if (site.kind === "city" && capitals.has(site.name)) {
+        el("circle", { r: 5, fill: paper, stroke: ink, "stroke-width": 1.2 }, mk);
+        el("circle", { r: 2, fill: C("--label") }, mk);
+      } else if (site.kind === "city") {
+        el("rect", { x: -3, y: -3, width: 6, height: 6, fill: paper, stroke: ink, "stroke-width": 1.1 }, mk);
+      }
     }
-    const labelled = (site.kind === "city" && !drawnCities.has(site.name)) || site.kind === "pasture" || (site.kind === "pass" && !drawnPasses.has(site.id));
+    const labelled = site.kind === "city" || site.kind === "pasture" || (site.kind === "pass" && !passDrawn);
     if (labelled) {
-      const t = el("text", { x: x + 7, y: y + 3, class: site.kind === "pass" ? "pname" : "city small" }, g);
+      const t = el("text", { x: x + 7, y: y + 3, class: site.kind === "pass" ? "pname" : site.kind === "pasture" ? "city small" : "city" }, g);
       t.textContent = site.kind === "pass" ? site.name.replace(" Pass", "") : site.name;
-      toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING.map(([dx, dy, a]) => [dx * 0.8, dy * 0.85, a] as Candidate) });
+      toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
-    const show = (e: PointerEvent) => { if (!drag) showTip(site.name, e); };
+    const show = (e: PointerEvent) => { if (!drag) showTip(tipText(site.id, site.name, site.name), e); };
     g.addEventListener("pointerenter", e => { show(e); if (!drag) opts.onHoverSite?.(site); });
     g.addEventListener("pointermove", show);
     g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
@@ -398,7 +483,9 @@ export function createMap(opts: MapOptions): GameMap {
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     const ls = labelScale();
     svg.style.setProperty("--ls", String(ls));
-    for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, ls))}) translate(${-x},${-y})`);
+    const k = Math.min(1, Math.max(0.4, ls));
+    for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${k}) translate(${-x},${-y})`);
+    for (const [g, x, y] of markers) g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
     drawColumn();
     clearTimeout(relayout);
     relayout = window.setTimeout(layoutLabels, 150);
@@ -408,7 +495,9 @@ export function createMap(opts: MapOptions): GameMap {
     vb.x = Math.min(W - vb.w, Math.max(0, vb.x)); vb.y = Math.min(H - vb.h, Math.max(0, vb.y));
   }
   function zoomAt(f: number, cx: number, cy: number) {
-    const nw = vb.w * f;
+    // clamp the new width first: computing the origin with a width that clampVB() then changes
+    // would shift the view at every wheel step once the zoom limit is reached
+    const nw = Math.min(maxW(), Math.max(W / 8, vb.w * f));
     vb.x = cx - ((cx - vb.x) * nw) / vb.w; vb.y = cy - ((cy - vb.y) * nw) / vb.w; vb.w = nw;
     clampVB(); setVB();
   }
@@ -464,6 +553,9 @@ export function createMap(opts: MapOptions): GameMap {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
       selRing.style.display = site ? "" : "none";
       if (site) { const [x, y] = project(site.lon, site.lat); selRing.setAttribute("cx", String(x)); selRing.setAttribute("cy", String(y)); }
+    },
+    setTaken(ids) {
+      for (const [id, g] of targetGs) g.classList.toggle("taken", ids.includes(id));
     },
     focus(lon0, lat0, lon1, lat1) {
       const [x0, y0] = project(lon0, lat1), [x1, y1] = project(lon1, lat0);

@@ -94,13 +94,34 @@ export const STARVATION_LOSS = 0.01; // [S] men lost per day without food
 export const SIEGE_RATE = 13;
 /** engineers speed sieges up by this factor [S] */
 export const ENGINEER_FACTOR = 2;
-/** a city with walls at least this strong yields engineers when taken [S] */
-export const ENGINEER_WALLS = 1.5;
 /** men lost storming a city: garrison x walls x (1 - progress/100) x STORM_COST [S] */
 export const STORM_COST = 0.11;
-/** days of grain for the horses from a taken city with full stores [S] */
-export const GRAIN_DAYS = 10;
 /** most days of rations a column can carry away from a taken city [S] */
 export const MAX_RATION_DAYS = 30;
 /** with fewer men the column can no longer campaign: the game is lost [S] */
 export const DEFEAT_MEN = 1000;
+
+export type CityType = "town" | "walled" | "fortress";
+
+export interface CityTypeRules {
+  /** strength of the walls: siege progress is divided by it, storm losses multiplied [S] */
+  walls: number;
+  /** days of grain for the horses from its granaries, with full stores [S] */
+  grainDays: number;
+  /** its craftsmen join the column as engineers */
+  engineers: boolean;
+  /** share of the garrison that joins the column when the place falls to a siege, not to a storm [S] */
+  recruits: number;
+  /** while it holds, no column can march through it */
+  blocks: boolean;
+}
+
+/** Three kinds of Jin strongholds, each with its own difficulty and reward. */
+export const CITY_TYPES: Record<CityType, CityTypeRules> = {
+  // county seat with earthen walls: falls fast, a supply stop
+  town: { walls: 1, grainDays: 10, engineers: false, recruits: 0, blocks: false },
+  // prefecture seat with brick walls: slow, but its workshops give engineers
+  walled: { walls: 2, grainDays: 10, engineers: true, recruits: 0, blocks: false },
+  // fort holding a mountain pass: small garrison behind strong walls, it closes the road
+  fortress: { walls: 5, grainDays: 0, engineers: false, recruits: 0.4, blocks: true },
+};

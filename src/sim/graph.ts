@@ -65,8 +65,11 @@ export function buildGraph(sites: readonly Site[], links: readonly [string, stri
 /** Hours-equivalent cost of a link: its length divided by its speed factor. */
 export const linkCost = (l: Link) => l.km / LINKS[l.kind].speed;
 
-/** Fastest route from `from` to `to` as a list of site ids, both ends included. Null if unreachable. */
-export function findPath(g: Graph, from: string, to: string): string[] | null {
+/**
+ * Fastest route from `from` to `to` as a list of site ids, both ends included. Null if unreachable.
+ * `closed` sites (a fortress still holding out) can be the destination but cannot be crossed.
+ */
+export function findPath(g: Graph, from: string, to: string, closed: (id: string) => boolean = () => false): string[] | null {
   const dist = new Map<string, number>([[from, 0]]);
   const prev = new Map<string, string>();
   const open = new Set([from]);
@@ -75,6 +78,7 @@ export function findPath(g: Graph, from: string, to: string): string[] | null {
     for (const id of open) if (dist.get(id)! < best) { best = dist.get(id)!; cur = id; }
     open.delete(cur);
     if (cur === to) break;
+    if (cur !== from && closed(cur)) continue;
     for (const { link, to: next } of g.neighbours(cur)) {
       const d = best + linkCost(link);
       if (d < (dist.get(next) ?? Infinity)) { dist.set(next, d); prev.set(next, cur); open.add(next); }

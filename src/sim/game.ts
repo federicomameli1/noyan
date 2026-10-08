@@ -30,6 +30,8 @@ export interface Column {
   /** the site where the column stands, or null while it is on a link */
   at: string | null;
   leg: Leg | null;
+  /** the site the column last left, to know which side of a fortress it stands on */
+  cameFrom: string | null;
   /** sites still to reach after the current one or the current leg */
   route: string[];
   /** set by a halt order: the column stays where it is, even halfway along a link */
@@ -53,6 +55,7 @@ export interface SiteState {
 }
 
 export interface CityState {
+  type: R.CityType;
   garrison: number;
   walls: number;
   /** days of food left inside the walls */
@@ -91,14 +94,16 @@ export function newGame(sheep = 0): GameState {
   const c = SCENARIO.column;
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
-    condition: c.condition, fatigue: 0, pace: "normal", at: SCENARIO.base, leg: null, route: [], halted: false,
+    condition: c.condition, fatigue: 0, pace: "normal", at: SCENARIO.base, cameFrom: null, leg: null, route: [], halted: false,
     today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false },
   };
   col.reported.foodDays = foodDays(col);
   const sites: Record<string, SiteState> = {};
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0 };
   const cities: Record<string, CityState> = {};
-  for (const [id, x] of Object.entries(SCENARIO.cities)) cities[id] = { ...x, storesAtStart: x.stores, progress: 0, taken: false };
+  for (const [id, x] of Object.entries(SCENARIO.cities)) {
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, progress: 0, taken: false };
+  }
   return {
     hour: 0, columns: [col], sites, cities, over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring.` }],
@@ -168,19 +173,35 @@ export interface RoutePlan {
   days: number;
 }
 
+/** True for a Jin fortress that still holds: no column can march through it. */
+export const isClosed = (s: GameState, id: string) => {
+  const city = s.cities[id];
+  return !!city && !city.taken && R.CITY_TYPES[city.type].blocks;
+};
+
+/** Fastest path from a site to another. At a fortress that still holds, the column can only go back the way it came. */
+function pathFrom(s: GameState, site: string, cameFrom: string | null, dest: string): string[] | null {
+  const closed = (id: string) => isClosed(s, id);
+  if (site !== dest && cameFrom && closed(site)) {
+    const back = findPath(graph, cameFrom, dest, closed);
+    return back && [site, ...back];
+  }
+  return findPath(graph, site, dest, closed);
+}
+
 /** Fastest route for a column to a site, without changing anything. Null if there is none. */
-export function planRoute(c: Column, dest: string): RoutePlan | null {
+export function planRoute(s: GameState, c: Column, dest: string): RoutePlan | null {
   let turnBack = false, sites: string[], km: number;
   if (c.at) {
     if (c.at === dest) return { turnBack, sites: [], km: 0, days: 0 };
-    const p = findPath(graph, c.at, dest);
+    const p = pathFrom(s, c.at, c.cameFrom, dest);
     if (!p) return null;
     sites = p.slice(1);
     km = routeKm(p);
   } else {
     // halfway along a link: go on, or turn back if that is shorter
     const l = c.leg!;
-    const ahead = findPath(graph, l.to, dest), back = findPath(graph, l.from, dest);
+    const ahead = pathFrom(s, l.to, l.from, dest), back = pathFrom(s, l.from, l.to, dest);
     if (!ahead && !back) return null;
     const cost = (p: string[] | null, start: number) => (p ? start + routeKm(p) : Infinity);
     turnBack = cost(back, l.done) < cost(ahead, l.km - l.done);
@@ -211,7 +232,7 @@ function marchDays(c: Column, turnBack: boolean, sites: string[]): number {
 /** Sends a column to a site along the fastest route. Returns false if there is no route. */
 export function orderMarch(s: GameState, ci: number, dest: string): boolean {
   const c = s.columns[ci];
-  const plan = planRoute(c, dest);
+  const plan = planRoute(s, c, dest);
   if (!plan) return false;
   if (c.siege && dest !== c.siege) liftSiege(s, c);
   if (plan.turnBack) {
@@ -275,24 +296,40 @@ export function orderStorm(s: GameState, ci: number): boolean {
     log(s, `${c.name} storms ${graph.site(c.siege).name}, loses ${lost.toLocaleString("en")} men and is thrown back.`, "alert");
   } else {
     log(s, `${c.name} storms ${graph.site(c.siege).name} and loses ${lost.toLocaleString("en")} men.`, "warning");
-    capture(s, c, c.siege);
+    capture(s, c, c.siege, true);
   }
   checkEnd(s);
   return true;
 }
 
-function capture(s: GameState, c: Column, id: string) {
-  const city = s.cities[id];
+/** What taking a city gives, by its type and the state of its stores. Also used by the interface. */
+export function spoils(c: Column, city: CityState, stormed: boolean) {
+  const rules = R.CITY_TYPES[city.type];
   const full = city.stores / city.storesAtStart;
+  return {
+    rations: Math.max(0, Math.min(full * city.storesAtStart * city.garrison, c.men * R.MAX_RATION_DAYS - c.rations)),
+    grain: rules.grainDays * full,
+    engineers: rules.engineers && !c.engineers,
+    recruits: stormed ? 0 : Math.round(city.garrison * rules.recruits),
+    opensPass: rules.blocks,
+  };
+}
+
+function capture(s: GameState, c: Column, id: string, stormed = false) {
+  const city = s.cities[id];
+  const got = spoils(c, city, stormed);
   city.taken = true;
   city.stores = 0;
   c.siege = null;
-  const rations = Math.max(0, Math.min(full * city.storesAtStart * city.garrison, c.men * R.MAX_RATION_DAYS - c.rations));
-  c.rations += rations;
-  c.grain = Math.max(c.grain, R.GRAIN_DAYS * full);
-  const gains = [`${Math.round(rations / Math.max(1, c.men))} days of food`, `${Math.round(R.GRAIN_DAYS * full)} days of grain for the horses`];
-  if (city.walls >= R.ENGINEER_WALLS && !c.engineers) { c.engineers = true; gains.push("engineers for the next sieges"); }
-  log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.`, "arrival");
+  c.rations += got.rations;
+  c.grain = Math.max(c.grain, got.grain);
+  c.men += got.recruits;
+  const gains = [`${Math.round(got.rations / Math.max(1, c.men))} days of food`];
+  if (got.grain >= 1) gains.push(`${Math.round(got.grain)} days of grain for the horses`);
+  if (got.engineers) { c.engineers = true; gains.push("engineers for the next sieges"); }
+  if (got.recruits) gains.push(`${got.recruits.toLocaleString("en")} men from the garrison, on foot`);
+  const opened = got.opensPass ? " The road through the pass is open." : "";
+  log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.${opened}`, "arrival");
   if (id === SCENARIO.objective) {
     s.result = "victory";
     s.over = true;
@@ -385,6 +422,7 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
     km -= step / speed;
     if (c.leg.done >= c.leg.km - 1e-9) {
       c.at = c.leg.to;
+      c.cameFrom = c.leg.from;
       c.leg = null;
       if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(c.at).name}.`, "arrival");
     }
