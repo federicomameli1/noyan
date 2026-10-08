@@ -6,7 +6,7 @@ import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -45,7 +45,7 @@ export function readSave(data: unknown): SaveFile {
 
   const g = d.game;
   if (!isObject(g) || !isNumber(g.hour) || g.hour < 0 || !Array.isArray(g.columns) || !g.columns.length
-    || !isObject(g.sites) || !isObject(g.cities) || !Array.isArray(g.log) || !isNumber(g.arrived) || typeof g.over !== "boolean") fail("The save is damaged.");
+    || !Array.isArray(g.jin) || g.jin.length !== SCENARIO.jin.length || !isObject(g.sites) || !isObject(g.cities) || !Array.isArray(g.log) || !isNumber(g.arrived) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;
   for (const c of game.columns) {
     if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition)

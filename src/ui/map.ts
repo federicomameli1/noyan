@@ -47,6 +47,24 @@ export interface ColumnMark {
   active: boolean;
 }
 
+/** A Jin army as the scouts know it. */
+export interface ArmyMark {
+  lon: number;
+  lat: number;
+  /** 1: only roughly where it is, drawn with a dashed ring · 2-3: its exact place */
+  level: number;
+  /** last known position, no longer in sight: drawn faded */
+  stale: boolean;
+  label: string;
+  /** longer text for the tooltip */
+  title: string;
+}
+
+/** A Jin banner on a pole, drawn around (0, 0) with the foot of the pole at the bottom. */
+export function jinBanner(): string {
+  return `<path class="jb-pole" d="M-6,10V-14"/><path class="jb-flag" d="M-6,-14H9L5,-9L9,-4H-6Z"/><path class="jb-stripe" d="M-6,-9H6"/>`;
+}
+
 export interface GameMap {
   setLayer(l: Layer): void;
   zoom(factor: number): void;
@@ -63,6 +81,8 @@ export interface GameMap {
   focus(lon0: number, lat0: number, lon1: number, lat1: number): void;
   /** strongholds already taken: drawn in Mongol colours */
   setTaken(ids: readonly string[]): void;
+  /** Jin armies the scouts see or have seen */
+  setArmies(armies: readonly ArmyMark[]): void;
 }
 
 const NS = "http://www.w3.org/2000/svg";
@@ -508,6 +528,35 @@ export function createMap(opts: MapOptions): GameMap {
   [0, 1, 2, 3].forEach(i => el("rect", { x: i * 50 * pxPerKm, y: 0, width: 50 * pxPerKm, height: 5, fill: i % 2 ? paper : ink, stroke: ink, "stroke-width": 0.8 }, scale));
   el("text", { x: 0, y: -6, class: "city" }, scale).textContent = "200 km";
 
+  // Jin armies: a banner each, under the columns
+  const armyLayer = el("g", {}, world);
+  const armyGs: { g: SVGGElement; ring: SVGCircleElement; label: SVGTextElement; title: SVGTitleElement }[] = [];
+  let armyMarks: readonly ArmyMark[] = [];
+  function armyG(i: number) {
+    while (armyGs.length <= i) {
+      const g = el("g", { class: "army-mark" }, armyLayer);
+      const ring = el("circle", { r: 24, class: "army-ring" }, g);
+      el("g", {}, g).innerHTML = jinBanner();
+      const label = el("text", { x: 2, y: -19, "text-anchor": "middle", class: "city army-label" }, g);
+      const title = el("title", {}, g);
+      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent, e); });
+      g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
+      g.addEventListener("pointerleave", () => { tip.hidden = true; });
+      armyGs.push({ g, ring, label, title });
+    }
+    return armyGs[i];
+  }
+  function drawArmies() {
+    const k = Math.min(1.2, Math.max(0.4, labelScale()));
+    // an army at the same place as a column stands to its left, so the helmet does not hide it
+    const cols = columnMarks.map(c => project(c.lon, c.lat));
+    armyMarks.forEach((m, i) => {
+      const [x, y] = project(m.lon, m.lat);
+      const shared = cols.some(([cx, cy]) => Math.hypot(cx - x, cy - y) < 3);
+      armyG(i).g.setAttribute("transform", `translate(${x - (shared ? 30 * k : 0)},${y}) scale(${k})`);
+    });
+  }
+
   // the army's columns: a helmet each, drawn when the game says where they are
   const columnLayer = el("g", {}, world);
   const columnGs: { g: SVGGElement; name: SVGTextElement; bar: SVGRectElement }[] = [];
@@ -586,6 +635,7 @@ export function createMap(opts: MapOptions): GameMap {
     for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${k}) translate(${-x},${-y})`);
     for (const [g, x, y] of markers) g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
     drawColumn();
+    drawArmies();
     placeLabels();
   };
   function clampVB() {
@@ -675,6 +725,19 @@ export function createMap(opts: MapOptions): GameMap {
         selMark[1] = x; selMark[2] = y;
         selRing.setAttribute("transform", `translate(${x},${y}) scale(${Math.min(1, Math.max(0.4, labelScale()))})`);
       }
+    },
+    setArmies(armies) {
+      armyMarks = armies;
+      armyGs.forEach((a, i) => { a.g.style.display = i < armies.length ? "" : "none"; });
+      armies.forEach((m, i) => {
+        const a = armyG(i);
+        if (a.label.textContent !== m.label) a.label.textContent = m.label;
+        a.title.textContent = m.title;
+        a.g.setAttribute("aria-label", m.title);
+        a.g.classList.toggle("stale", m.stale);
+        a.ring.style.display = m.level <= 1 ? "" : "none";
+      });
+      drawArmies();
     },
     setTaken(ids) {
       for (const [id, g] of targetGs) g.classList.toggle("taken", ids.includes(id));

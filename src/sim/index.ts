@@ -7,4 +7,5 @@ export * from "./constants";
 export * from "./graph";
 export * from "./scenario";
 export * from "./game";
+export * from "./jin";
 export * from "./save";

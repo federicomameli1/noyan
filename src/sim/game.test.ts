@@ -172,6 +172,7 @@ describe("sieges", () => {
 
   it("storming costs men, less when the siege is advanced, and wins at Taiyuan", () => {
     const s = at("taiyuan");
+    s.jin = []; // no relief army: this is about the storm alone
     orderSiege(s, 0);
     const fresh = stormCost(s.cities.taiyuan);
     days(s, 50); // about two thirds of the way

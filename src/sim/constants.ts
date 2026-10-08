@@ -125,3 +125,22 @@ export const CITY_TYPES: Record<CityType, CityTypeRules> = {
   // fort holding a mountain pass: small garrison behind strong walls, it closes the road
   fortress: { walls: 5, grainDays: 0, engineers: false, recruits: 0.4, blocks: true },
 };
+
+// --- Jin armies (layer 1) ---
+/** hours a day a Jin army marches, starting with the Mongol columns [S] */
+export const JIN_MARCH_HOURS = 8;
+/**
+ * How far the scouts of a column see a Jin army, km [S]: that an army is there and roughly how big,
+ * its exact place and size to the thousand, and everything (foot, horse, morale, where it is going).
+ */
+export const SIGHT_KM = { presence: 120, size: 60, full: 30 } as const;
+/** scouts on exhausted horses ride half as far [S] */
+export const SIGHT_EXHAUSTED = 0.5;
+/** a Jin army notices a column this close, km [S] */
+export const JIN_SIGHT_KM = 40;
+/** Jin horsemen hear of a flock left this far from them or from a Jin town, km [S] */
+export const JIN_FLOCK_SIGHT_KM = 60;
+/** days of food a relief army brings into the city it reaches [S] */
+export const RELIEF_STORES = 20;
+/** size bands of a Jin army seen from far away, men: up to `small` is small, up to `medium` medium [S] */
+export const ARMY_SIZE = { small: 2000, medium: 6000 } as const;

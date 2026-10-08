@@ -43,6 +43,9 @@ const SITES: Row[] = [
   ["yuci", "Yuci", "city", 112.72, 37.68, "plain", "jin"],
   ["pingding", "Pingding", "junction", 113.58, 37.86, "mountain", "jin"],
   ["fenzhou", "Fenzhou", "city", 111.78, 37.27, "plain", "jin"],
+  // the Fen valley south to Pingyang, where the Jin gather their relief army
+  ["huozhou", "Huozhou", "junction", 111.75, 36.57, "plain", "jin"],
+  ["pingyang", "Pingyang", "city", 111.52, 36.08, "plain", "jin"],
   // Hebei plain
   ["zhongdu", "Zhongdu", "city", 116.4, 39.9, "plain", "mongols"],
   ["zhuozhou", "Zhuozhou", "city", 115.97, 39.49, "plain", "mongols"],
@@ -81,6 +84,8 @@ const LINKS: [string, string, LinkKind][] = [
   ["shiling", "taiyuan", "pass"],
   ["taiyuan", "yuci", "road"],
   ["taiyuan", "fenzhou", "road"],
+  ["fenzhou", "huozhou", "road"],
+  ["huozhou", "pingyang", "road"],
   ["yuci", "pingding", "mountain"],
   ["pingding", "niangzi", "pass"],
   ["niangzi", "zhending", "pass"],
@@ -101,6 +106,23 @@ const LINKS: [string, string, LinkKind][] = [
 
 const sites: Site[] = SITES.map(([id, name, kind, lon, lat, terrain, control, water = true]) => ({ id, name, kind, lon, lat, terrain, control, water }));
 
+export interface JinArmySpec {
+  name: string;
+  /** a field army relieves besieged cities; raiders are horsemen who go after flocks and avoid columns */
+  kind: "field" | "raiders";
+  foot: number;
+  horse: number;
+  /** 1 = line troops, 0.6 = peasant levies, 1.1 = guard or Jurchen horse [S] */
+  quality: number;
+  morale: number;
+  /** km a day on a road */
+  kmPerDay: number;
+  /** where it starts, and goes back to */
+  home: string;
+  /** field army: it marches to `city` once that city has been besieged for `afterDays`, or once `orWhenTaken` falls */
+  relieve?: { city: string; afterDays: number; orWhenTaken?: string };
+}
+
 export interface ColumnSpec { name: string; men: number; horsesPerMan: number; rationsPerMan: number; condition: number }
 
 export const SCENARIO = {
@@ -120,6 +142,14 @@ export const SCENARIO = {
       message: "A rider from the khan: Uyar's Khitan horsemen reach Datong, 2,000 men.",
     },
   ] as { date: GameDate; at: string; column: ColumnSpec; message: string }[],
+  /** Jin armies in the field. Numbers are mine [S]: there are no reliable figures for Shanxi in 1218 */
+  jin: [
+    {
+      name: "Pingyang army", kind: "field", foot: 7000, horse: 1500, quality: 0.8, morale: 50, kmPerDay: 20, home: "pingyang",
+      relieve: { city: "taiyuan", afterDays: 15, orWhenTaken: "fenzhou" },
+    },
+    { name: "Jin frontier horse", kind: "raiders", foot: 0, horse: 1200, quality: 1, morale: 60, kmPerDay: 35, home: "xinzhou" },
+  ] as JinArmySpec[],
   /** Jin strongholds that can be besieged: type, garrison, stores in days, and walls when they differ from the type [S] */
   cities: {
     daizhou: { type: "town", garrison: 1000, stores: 40 },

@@ -3,10 +3,11 @@ import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
   canBesiege, foodDays, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
+  describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type CityState, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import * as saves from "./ui/saves";
-import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, mix, targetSymbol, type Layer } from "./ui/map";
+import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type Layer } from "./ui/map";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const graph = SCENARIO.graph;
@@ -304,7 +305,9 @@ function renderPlace() {
   const food = foodDays(c);
   const city = game.cities[s.id];
   let route = "";
-  if (here && city && !city.taken) {
+  if (here && city && !city.taken && isRelieved(game, s.id)) {
+    route = `<div class="route"><b class="t-bad">A Jin army holds the city and keeps it fed: the siege makes no headway.</b> Storm the walls, or march away.</div>`;
+  } else if (here && city && !city.taken) {
     route = c.siege === s.id
       ? `<div class="route">Besieged: ${Math.floor(city.progress)}%, falls in about ${siegeDays(game, c, s.id)} days if the siege goes on.</div>`
       : `<div class="route">A siege would take about ${siegeDays(game, c, s.id)} days${c.engineers ? " with your engineers" : ""}.</div>`;
@@ -316,7 +319,7 @@ function renderPlace() {
     const short = food < time;
     const ahead = f ? `<br>${f.arrival === null ? `After ${Math.round(f.end.day)} days, still on the way` : "On arrival"}: ${arrivalText(f)}.` : "";
     route = `<div class="route">${fmt(plan.km)} km, ${days(time)} at the ${effectivePace(c)} pace.${short ? ` <b class="t-bad">Food lasts ${Math.floor(food)} days.</b>` : ""}${ahead}</div>`;
-  } else route = `<div class="route">No open road: a Jin fortress holds the way.</div>`;
+  } else route = `<div class="route">No open road: a Jin fortress or army holds the way.</div>`;
   const changed = setHTML(info, `<button class="close icon" aria-label="Close">✕</button>
     <span class="label">${city ? (city.taken ? `${TYPE_NAME[city.type]}, taken` : TYPE_NAME[city.type]) : KIND[s.kind]}</span><h2>${s.name}</h2>
     ${selectedDesc ? `<p class="note" style="margin-top:4px">${selectedDesc}</p>` : ""}
@@ -332,6 +335,7 @@ function renderPlace() {
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
+      ${armiesAt(s.id).map(a => `<dt>Jin army</dt><dd>${armyText(a)}</dd>`).join("")}
     </dl>
     ${route}
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
@@ -390,7 +394,7 @@ function renderColumn() {
   const camp = campSite(c);
   const dest = c.route.at(-1) ?? c.leg?.to;
   const besieged = c.siege ? game.cities[c.siege] : null;
-  const status = c.siege ? `Besieging ${graph.site(c.siege).name}` : c.at
+  const status = c.siege ? `Besieging ${graph.site(c.siege).name}` : c.waiting ? `Halted: a Jin army bars the road at ${graph.site(c.waiting).name}` : c.at
     ? (c.route.length && !c.halted ? `Leaving ${graph.site(c.at).name} for ${graph.site(dest!).name}` : `Camped at ${graph.site(c.at).name}`)
     : c.halted ? `Halted on the way to ${graph.site(c.leg!.to).name}` : `Marching to ${graph.site(dest!).name}`;
   const pace = effectivePace(c);
@@ -415,7 +419,7 @@ function renderColumn() {
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
-    ${besieged ? bar("Siege", besieged.progress, "ok", `${siegeDays(game, c, c.siege!)} days`) : ""}
+    ${besieged ? bar("Siege", besieged.progress, isRelieved(game, c.siege!) ? "bad" : "ok", isRelieved(game, c.siege!) ? "stalled" : `${siegeDays(game, c, c.siege!)} days`) : ""}
     ${c.engineers || c.grain > 0 ? `<p class="note">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(" · ")}</p>` : ""}
     <div class="orders">
       <div class="seg" role="group" aria-label="Pace">
@@ -504,6 +508,7 @@ function render() {
   $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
   renderColumns();
+  renderArmies();
   map.setTaken(Object.keys(game.cities).filter(id => game.cities[id].taken));
   renderRoute();
   renderColumn();
@@ -515,6 +520,35 @@ function renderColumns() {
     const [lon, lat] = columnPosition(c);
     return { name: c.name, lon, lat, condition: c.condition, level: bandLevel(conditionBand(c.condition)), active: i === active };
   }));
+}
+
+// --- Jin armies, as far as the scouts know them ---
+/** Armies the scouts place at a site: seen there now, or last seen there. */
+const armiesAt = (id: string) => game.jin.filter(a => a.seen?.site === id);
+/** What the player knows of an army, in one line. */
+function armyText(a: JinArmy) {
+  const v = a.seen!;
+  const now = a.sight > 0;
+  const what = describeSighting(v, a.name);
+  const when = now ? "" : ` Last seen ${formatDate(sightingDate(game, v))}.`;
+  const doing = v.level === 3 ? `, ${describeOrder(v)}` : "";
+  return `${what[0].toUpperCase() + what.slice(1)}${doing}.${when}`;
+}
+function renderArmies() {
+  const marks: ArmyMark[] = [];
+  for (const a of game.jin) {
+    const v = a.seen;
+    if (!v) continue;
+    const at = graph.site(v.site);
+    const men = v.foot + v.horse;
+    const label = v.level === 1 ? `${sizeBand(men)} army?` : v.level === 2 ? `~${fmt(Math.max(1000, Math.round(men / 1000) * 1000))}` : fmt(men);
+    const stale = a.sight === 0;
+    marks.push({
+      lon: v.level === 1 ? at.lon : v.lon, lat: v.level === 1 ? at.lat : v.lat, level: v.level, stale,
+      label: stale ? `${label} · ${shortDate(v.hour)}` : label, title: armyText(a),
+    });
+  }
+  map.setArmies(marks);
 }
 
 function selectColumn(i: number) {
@@ -561,7 +595,7 @@ function frame(now: number) {
     if (stepped && Math.floor(game.hour / 24) !== savedDay) { savedDay = Math.floor(game.hour / 24); autosave(); }
     if (stepped) {
       if (now - lastPanel > 200 || game.log.length !== logSeen) { lastPanel = now; render(); }
-      else { renderColumns(); renderRoute(); }
+      else { renderColumns(); renderArmies(); renderRoute(); }
     }
     if (game.over) setPlaying(false);
   } else acc = 0;
@@ -599,7 +633,8 @@ function legend(layer: Layer) {
     <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--road")}" stroke-width="1.5" stroke-opacity=".7"/></svg></dt><dd>Road</dd>
     <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".6" stroke-dasharray="5 4"/></svg></dt><dd>Track</dd>
     <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".7" stroke-dasharray="1 4" stroke-linecap="round"/></svg></dt><dd>Mountain path</dd>
-    <dt><svg width="18" height="18" viewBox="-18 -26 36 36" aria-hidden="true">${helmet()}</svg></dt><dd>Muqali's column</dd>`;
+    <dt><svg width="18" height="18" viewBox="-18 -26 36 36" aria-hidden="true">${helmet()}</svg></dt><dd>Muqali's column</dd>
+    <dt><svg width="18" height="18" viewBox="-12 -16 24 28" aria-hidden="true"><g class="army-mark">${jinBanner()}</g></svg></dt><dd>Jin army: the closer your scouts, the more you know. Faded where it was last seen</dd>`;
   let items = "";
   if (layer === "pasture") {
     items = `<dt>${sw(mix(C("--p-low"), C("--p-high"), 0.15))}</dt><dd>Poor pasture</dd><dt>${sw(mix(C("--p-low"), C("--p-high"), 0.5))}</dt><dd>Average</dd><dt>${sw(C("--p-high"))}</dt><dd>Rich pasture</dd>`;
