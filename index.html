@@ -8,34 +8,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
   </head>
-  <body>
+  <body class="at-title">
     <div class="title" id="title">
-      <section class="hero">
-        <picture>
-          <source media="(max-aspect-ratio: 4/5)" srcset="./images/home/hero-tall.webp" />
-          <img src="./images/home/hero-wide.webp" alt="A Mongol commander watches his column of horsemen, remounts and sheep wind through the hills of northern China" />
-        </picture>
-        <div class="hero-text">
-          <h1>Noyan</h1>
-          <p>Keep a Mongol army fed and moving through northern China, 1218. Battles are won long before they start, with grass, horses and sheep.</p>
-          <button id="play-game" class="primary big">Play</button>
-          <a class="more" href="#about">How it plays ↓</a>
-        </div>
-      </section>
-      <section class="about" id="about">
-        <figure>
-          <img src="./images/home/pasture.webp" alt="Herders watch remount horses and sheep graze on the steppe" loading="lazy" width="900" height="672" />
-          <figcaption><b>Grass is fuel</b>Every rider brings several horses, and horses only eat by grazing. Every hour on the road is an hour they do not eat.</figcaption>
-        </figure>
-        <figure>
-          <img src="./images/home/supplies.webp" alt="Camels and carts are loaded with grain and dried meat in a Mongol camp" loading="lazy" width="900" height="672" />
-          <figcaption><b>Food on the hoof</b>Flocks feed the men but walk at their own pace. Choose what to bring, and what you can find along the way.</figcaption>
-        </figure>
-        <figure>
-          <img src="./images/home/siege.webp" alt="Mongol horsemen and engineers with trebuchets besiege a walled Jin city" loading="lazy" width="900" height="672" />
-          <figcaption><b>Walls and passes</b>Jin cities sit behind walls and mountain passes. Arrive with the army whole, or do not arrive at all.</figcaption>
-        </figure>
-      </section>
+      <div class="title-card">
+        <h1>Noyan</h1>
+        <p class="tagline">Northern China, 1218. Genghis Khan has gone west and left you a small army and a long war. Keep it fed and moving.</p>
+        <ul class="mechanics">
+          <li><b>Grass is fuel</b>Every rider brings several horses, and horses only eat by grazing. An hour on the road is an hour they do not eat.</li>
+          <li><b>Food on the hoof</b>Sheep feed the men but walk at their own pace. Bring them, or find food along the way.</li>
+          <li><b>Walls and passes</b>Jin cities sit behind walls and mountain passes. Arrive with the army whole, or do not arrive at all.</li>
+        </ul>
+        <button id="play-game" class="primary big">Play</button>
+      </div>
+      <img class="plate" src="./images/pursuit-diez.webp" alt="Mongol horse archers in lamellar armour pursue their enemies, painted on paper" title="Pursuit by Mongol warriors. Ilkhanid Iran, early 14th century. Diez Albums, Staatsbibliothek zu Berlin." width="1100" height="875" />
     </div>
 
     <main class="stage" id="stage">
