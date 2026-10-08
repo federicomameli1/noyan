@@ -45,7 +45,9 @@ const focusColumn = () => {
 };
 map.focus(111.4, 37.1, 116.6, 41.6);
 
-// --- start screen ---
+// --- title screen, then the start card ---
+$("play-game").onclick = () => $("title").classList.add("gone");
+
 const flocks = $("flocks");
 SCENARIO.flockOptions.forEach(n => {
   const b = document.createElement("button");
