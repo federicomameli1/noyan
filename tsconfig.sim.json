@@ -1,0 +1,11 @@
+{
+  // The simulation must not depend on the browser: "lib" here leaves out the DOM,
+  // so if a file in src/sim uses document, window or similar, compilation fails.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src/sim"],
+  "exclude": []
+}

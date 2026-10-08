@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Noyan</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <span class="label">Prototype · layer 0 in progress</span>
+        <h1>Northern China, 1217</h1>
+      </header>
+
+      <div class="group" id="layers" role="group" aria-label="Layer">
+        <button data-layer="map" aria-pressed="false">Map only</button>
+        <button data-layer="terrain" aria-pressed="false">Terrain</button>
+        <button data-layer="pasture" aria-pressed="true">Pasture</button>
+        <button data-layer="political" aria-pressed="false">Political</button>
+        <button data-layer="diplomatic" aria-pressed="false">Diplomatic</button>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="zoom">
+          <button id="zin" aria-label="Zoom in">+</button>
+          <button id="zout" aria-label="Zoom out">−</button>
+          <button id="zreset" aria-label="Full view" style="font-size: 13px">⤢</button>
+        </div>
+        <div class="cartouche"><b>Map of Northern China</b><i>at the time of Muqali's campaign, year 1217</i></div>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+
+      <div class="row">
+        <div class="info" id="info"><h3>No region selected</h3><p class="note">Click a region or a pass to see its details.</p></div>
+        <div class="info"><h3 id="leg-title">Legend</h3><dl id="legend"></dl></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

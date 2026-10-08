@@ -1,0 +1,361 @@
+// Map view: draws the hand-drawn map in SVG and handles zoom, panning and selection.
+// It reads data from the simulation (src/sim) and never changes it.
+import { Delaunay } from "d3-delaunay";
+import { CITIES, REGIONS, ROADS, project, type Point, type Region } from "../sim";
+import { GEO, type Pass } from "./geo";
+
+export type Layer = "map" | "terrain" | "pasture" | "political" | "diplomatic";
+
+export const LABELS = {
+  terrain: { steppe: "Steppe", desert: "Desert", upland: "Uplands and hills", mountain: "Mountains", plain: "Farmed plain" },
+  political: { mongols: "Mongol control", jin: "Jin control", contested: "Contested", xixia: "Xi Xia, Mongol vassal" },
+  diplomatic: { ally: "Allied or submitted", neutral: "Wavering", hostile: "Hostile" },
+} as const;
+
+export interface MapOptions {
+  container: HTMLElement;
+  tooltip: HTMLElement;
+  onSelectRegion?: (r: Region) => void;
+  onSelectPass?: (p: Pass) => void;
+}
+
+export interface GameMap {
+  setLayer(l: Layer): void;
+  zoom(factor: number): void;
+  resetView(): void;
+  /** moves Muqali's column icon to a (lon, lat) point */
+  placeColumn(lon: number, lat: number): void;
+}
+
+const NS = "http://www.w3.org/2000/svg";
+type Attrs = Record<string, string | number>;
+function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Attrs = {}, parent?: Element): SVGElementTagNameMap[K] {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, String(attrs[k]));
+  parent?.appendChild(e);
+  return e;
+}
+export const cssVar = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const hex = (s: string) => parseInt(s.replace("#", ""), 16);
+export function mix(a: string, b: string, k: number) {
+  const A = hex(a), B = hex(b), ch = (s: number) => Math.round(((A >> s) & 255) * (1 - k) + ((B >> s) & 255) * k);
+  return "#" + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0");
+}
+
+export function regionFill(r: Region, layer: Layer): string | null {
+  switch (layer) {
+    case "terrain": return cssVar("--t-" + r.terrain);
+    case "pasture": return mix(cssVar("--p-low"), cssVar("--p-high"), r.pasture / 100);
+    case "political": return cssVar("--pol-" + r.control);
+    case "diplomatic": return cssVar("--dip-" + r.diplomacy);
+    default: return null;
+  }
+}
+
+/** Mongol helmet used as the column marker, on the map and in the legend. */
+export function helmet(): string {
+  const ink = cssVar("--ink"), paper = cssVar("--paper"), label = cssVar("--label");
+  return `
+  <path d="M0,-25.5C5,-27 9.5,-23.5 11,-17.5C8,-20.5 4.5,-22.5 0.5,-22.5Z" fill="${label}" stroke="${ink}" stroke-width=".6"/>
+  <path d="M-9,-4.5L-13,6.5Q0,10 13,6.5L9,-4.5Z" fill="${cssVar("--pol-mongols")}" stroke="${ink}" stroke-width=".9"/>
+  <path d="M-10.3,-1Q0,1.5 10.3,-1M-11.6,2.8Q0,5.6 11.6,2.8" fill="none" stroke="${paper}" stroke-width=".7" stroke-opacity=".75"/>
+  <path d="M-7,-5.5V8M-3.5,-5.5V8.8M0,-5.5V9M3.5,-5.5V8.8M7,-5.5V8" stroke="${ink}" stroke-width=".45" stroke-opacity=".6"/>
+  <path d="M-8,-6C-8,-14 -3,-19.5 0,-23.5C3,-19.5 8,-14 8,-6Z" fill="#a8a294" stroke="${ink}" stroke-width="1"/>
+  <path d="M-2.2,-19Q-5.5,-14 -5.8,-8" fill="none" stroke="${paper}" stroke-width="1.2" stroke-opacity=".75"/>
+  <path d="M0,-23.5V-27.5" stroke="${ink}" stroke-width="1.3"/>
+  <circle cx="0" cy="-27.8" r="1.3" fill="${ink}"/>
+  <rect x="-9.5" y="-7.2" width="19" height="3" rx="1.2" fill="${label}" stroke="${ink}" stroke-width=".8"/>`;
+}
+
+export function createMap(opts: MapOptions): GameMap {
+  const { W, H } = GEO;
+  const { container: stage, tooltip: tip } = opts;
+  const centers = REGIONS.map(r => [...project(r.lon, r.lat)] as [number, number]);
+  let layer: Layer = "pasture";
+  let selected: Region | null = null;
+
+  // seeded pseudo-random generator, so the drawing is always the same
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const j = (a: number) => (rnd() - 0.5) * a;
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Hand-drawn map of northern China in 1217" });
+  stage.prepend(svg);
+  const C = cssVar;
+  const land = GEO.land.join("");
+  svg.innerHTML = `<defs>
+  <filter id="grain" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 .35  0 0 0 0 .27  0 0 0 0 .15  0 0 0 .55 -.18"/>
+  </filter>
+  <filter id="blotch" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency=".006" numOctaves="3" seed="9" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .16  0 0 0 .75 -.3"/>
+  </filter>
+  <filter id="wobble" x="-2%" y="-2%" width="104%" height="104%">
+    <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="3" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="2" seed="5" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="1.4"/>
+  </filter>
+  <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+    <stop offset="60%" stop-color="${C("--ink")}" stop-opacity="0"/><stop offset="100%" stop-color="${C("--ink")}" stop-opacity=".28"/>
+  </radialGradient>
+  <clipPath id="land"><path d="${land}" clip-rule="evenodd"/></clipPath>
+</defs>`;
+  const world = el("g", {}, svg);
+  const ink = C("--ink"), paper = C("--paper"), soft = C("--ink-soft");
+
+  // sea, water lines, land
+  el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, fill: C("--sea") }, world);
+  const waves = el("g", { filter: "url(#wobble)", fill: "none", stroke: C("--sea-line"), "stroke-linejoin": "round" }, world);
+  ([[26, 0.13, "2 7"], [16, 0.2, "3 5"], [8, 0.32, ""]] as const).forEach(([w, o, da]) =>
+    el("path", { d: land, "stroke-width": w, "stroke-opacity": o, "stroke-dasharray": da }, waves));
+  el("path", { d: land, fill: paper, "fill-rule": "evenodd" }, world);
+
+  // watercolour regions (Voronoi cells around the centres)
+  const landG = el("g", { "clip-path": "url(#land)" }, world);
+  const vor = Delaunay.from(centers).voronoi([-20, -20, W + 20, H + 20]);
+  const washG = el("g", { filter: "url(#wash)" }, landG);
+  const cells = REGIONS.map((r, i) => {
+    const p = el("path", { d: vor.renderCell(i), class: "region" }, washG);
+    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
+    p.addEventListener("pointermove", e => { if (!drag) showTip(`${r.name} · pasture ${r.pasture}`, e); });
+    p.addEventListener("pointerleave", () => { tip.hidden = true; });
+    p.addEventListener("click", () => { if (!moved) select(r); });
+    return p;
+  });
+  el("path", { d: REGIONS.map((_, i) => vor.renderCell(i)).join(""), class: "border" }, landG);
+  const selPath = el("path", { class: "sel", filter: "url(#wobble)" }, landG);
+
+  const roads = ROADS.map(s => s.map(([lon, lat]) => project(lon, lat)));
+  // distance from a segment, to keep roads and passes clear of relief marks
+  function segDist(px: number, py: number, [ax, ay]: Point, [bx, by]: Point) {
+    const dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+  }
+  const nearWay = (x: number, y: number, s: number) =>
+    GEO.passes.some(p => Math.hypot(x - p.x, y - p.y) < 17 + s * 0.6) ||
+    roads.some(r => r.some((q, i) => i > 0 && segDist(x, y, r[i - 1], q) < 2 + s * 0.45));
+
+  // terrain marks: dotted desert, tufted steppe, hills and mountains
+  const occupied = new Set(GEO.marks.map(([x, y]) => `${Math.round(x / 18)},${Math.round(y / 18)}`));
+  const texG = el("g", { "pointer-events": "none", stroke: soft, fill: soft }, landG);
+  let dots = "", tufts = "";
+  for (let y = 6; y < H; y += 11) for (let x = 6 + (y % 22 ? 5 : 0); x < W; x += 11) {
+    const r = REGIONS[vor.delaunay.find(x, y)];
+    if (occupied.has(`${Math.round(x / 18)},${Math.round(y / 18)}`)) continue;
+    if (r.terrain === "desert" && rnd() < 0.55) { const px = x + j(8), py = y + j(8); dots += `M${px.toFixed(1)},${py.toFixed(1)}h.01`; }
+    if (r.terrain === "steppe" && rnd() < 0.07) {
+      const px = x + j(10), py = y + j(10);
+      tufts += `M${(px - 3).toFixed(1)},${(py - 2.5).toFixed(1)}L${px.toFixed(1)},${py.toFixed(1)}L${(px + 3).toFixed(1)},${(py - 3).toFixed(1)}M${px.toFixed(1)},${py.toFixed(1)}L${(px + 0.3).toFixed(1)},${(py - 4).toFixed(1)}`;
+    }
+  }
+  el("path", { d: dots, "stroke-width": 1.6, "stroke-linecap": "round", fill: "none", "stroke-opacity": 0.7 }, texG);
+  el("path", { d: tufts, "stroke-width": 0.8, fill: "none", "stroke-opacity": 0.75 }, texG);
+  const reliefG = el("g", { "pointer-events": "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, landG);
+  GEO.marks.forEach(([x, y, s, k]) => {
+    if (nearWay(x, y, s)) return;
+    if (k === "h") {
+      el("path", { d: `M${x - s},${y}Q${x + j(1.5)},${y - s * (0.9 + j(0.3))} ${x + s},${y}`, fill: "none", stroke: soft, "stroke-width": 0.9 }, reliefG);
+      return;
+    }
+    const big = k === "M", px = x + j(s * 0.3), py = y - s * ((big ? 1.3 : 1.05) + j(0.25));
+    const g = el("g", {}, reliefG);
+    el("path", { d: `M${x - s},${y}Q${x - s * 0.5},${y - s * 0.45} ${px},${py}Q${x + s * 0.45},${y - s * 0.5} ${x + s},${y}`, fill: paper, stroke: ink, "stroke-width": big ? 1.3 : 1.05 }, g);
+    let h = "";
+    const n = big ? 5 : 3;
+    for (let i = 1; i <= n; i++) {
+      const t = i / (n + 1), hx = px + (x + s - px) * t * 0.85, hy = py + (y - py) * t * 0.85;
+      h += `M${hx.toFixed(1)},${hy.toFixed(1)}L${(hx - s * 0.2).toFixed(1)},${(y - 1).toFixed(1)}`;
+    }
+    el("path", { d: h, fill: "none", stroke: ink, "stroke-width": big ? 0.85 : 0.7, "stroke-opacity": 0.85 }, g);
+  });
+
+  // waters and coasts in ink
+  const inkG = el("g", { filter: "url(#wobble)", fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, world);
+  el("path", { d: GEO.lakes.join(""), fill: C("--sea"), stroke: C("--river"), "stroke-width": 0.9 }, inkG);
+  GEO.rivers.forEach(rv => el("path", { d: rv.d, stroke: C("--river"), "stroke-width": rv.r <= 4 ? 2 : 1.2 }, inkG));
+  el("path", { d: land, stroke: ink, "stroke-width": 1.5 }, inkG);
+
+  // roads
+  function smooth(pts: Point[]) {
+    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], mx = (x0 + x1) / 2 + j(10), my = (y0 + y1) / 2 + j(10);
+      d += `Q${mx.toFixed(1)},${my.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+    }
+    return d;
+  }
+  const roadG = el("g", { fill: "none", stroke: C("--road"), "stroke-width": 1.5, "stroke-dasharray": "5 3.5", "stroke-linecap": "round", "stroke-opacity": 0.85, "pointer-events": "none", filter: "url(#wobble)" }, world);
+  roads.forEach(r => el("path", { d: smooth(r) }, roadG));
+
+  // labels: collected here and then arranged by layoutLabels() to avoid overlaps
+  type Candidate = [number, number, string];
+  interface Box { x: number; y: number; width: number; height: number }
+  const toPlace: { el: SVGTextElement; ax: number; ay: number; pri: number; cands: Candidate[] }[] = [];
+  const obstacles: Box[] = [];
+  const RING: Candidate[] = [[10, 4, "start"], [-10, 4, "end"], [0, -9, "middle"], [0, 16, "middle"], [8, -7, "start"], [-8, -7, "end"], [8, 15, "start"], [-8, 15, "end"]];
+  const PASS_LABEL: Record<string, Candidate> = {
+    juyong: [10, -6, "start"], zijing: [-10, 16, "end"], gubeikou: [10, -8, "start"], yehuling: [-10, -8, "end"],
+    yanmen: [-11, 4, "end"], niangzi: [0, 25, "middle"], tongguan: [0, -17, "middle"], yuguan: [10, 16, "start"],
+  };
+  const passG = el("g", {}, world);
+  GEO.passes.forEach(p => {
+    const g = el("g", { class: "pass", tabindex: 0, role: "button", "aria-label": p.name }, passG);
+    el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, g);
+    el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+    const [dx, dy, anc] = PASS_LABEL[p.id] ?? [10, -8, "start"];
+    const t = el("text", { x: p.x + dx, y: p.y + dy, "text-anchor": anc, class: "pname" }, g);
+    t.textContent = p.name.replace(" Pass", "");
+    obstacles.push({ x: p.x - 12, y: p.y - 12, width: 24, height: 24 });
+    toPlace.push({ el: t, ax: p.x, ay: p.y, pri: 0, cands: [[dx, dy, anc], [15, 4, "start"], [-15, 4, "end"], [0, -17, "middle"], [0, 25, "middle"], [13, -10, "start"], [-13, -10, "end"], [13, 20, "start"], [-13, 20, "end"]] });
+    const show = (e: PointerEvent) => { if (!drag) showTip(p.name + " · pass", e); };
+    g.addEventListener("pointerenter", show);
+    g.addEventListener("pointermove", show);
+    g.addEventListener("pointerleave", () => { tip.hidden = true; });
+    const pick = () => { if (!moved) opts.onSelectPass?.(p); };
+    g.addEventListener("click", pick);
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+
+  // cities
+  const cityG = el("g", { "pointer-events": "none" }, world);
+  CITIES.forEach(c => {
+    const [x, y] = project(c.lon, c.lat);
+    if (c.capital) {
+      el("circle", { cx: x, cy: y, r: 5, fill: paper, stroke: ink, "stroke-width": 1.2 }, cityG);
+      el("circle", { cx: x, cy: y, r: 2, fill: C("--label") }, cityG);
+    } else el("rect", { x: x - 3, y: y - 3, width: 6, height: 6, fill: paper, stroke: ink, "stroke-width": 1.1 }, cityG);
+    const t = el("text", { x: x + 8, y: y + 4, class: "city" }, cityG);
+    t.textContent = c.name;
+    obstacles.push({ x: x - 5, y: y - 5, width: 10, height: 10 });
+    toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
+  });
+
+  // region names
+  const nameG = el("g", {}, world);
+  REGIONS.forEach((r, i) => {
+    const [cx, cy] = centers[i];
+    const t = el("text", { x: cx, y: cy + 26, "text-anchor": "middle", class: "rname" }, nameG);
+    t.textContent = r.name;
+    const cands: Candidate[] = [];
+    for (const dy of [26, -14, 44, -32, 62, -50, 80]) for (const dx of [0, -30, 30, -60, 60]) cands.push([dx, dy, "middle"]);
+    toPlace.push({ el: t, ax: cx, ay: cy, pri: 2, cands });
+  });
+
+  function layoutLabels() {
+    const placed = obstacles.map(b => ({ ...b }));
+    const pad = 2;
+    const hit = (a: Box, b: Box) => !(a.x + a.width + pad < b.x || b.x + b.width + pad < a.x || a.y + a.height + pad < b.y || b.y + b.height + pad < a.y);
+    const area = (a: Box, b: Box) =>
+      Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
+      let best: [number, number, string, Box] | null = null, bestCost = Infinity;
+      for (const [dx, dy, anc] of L.cands) {
+        L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
+        const b = L.el.getBBox();
+        const outside = b.x < 4 || b.y < 4 || b.x + b.width > W - 4 || b.y + b.height > H - 4 ? 1e6 : 0;
+        const cost = outside + placed.reduce((s, o) => s + (hit(b, o) ? 1000 + area(b, o) : 0), 0);
+        if (cost < bestCost) { bestCost = cost; best = [dx, dy, anc, { x: b.x, y: b.y, width: b.width, height: b.height }]; }
+        if (cost === 0) break;
+      }
+      if (!best) return;
+      const [dx, dy, anc, box] = best;
+      L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
+      placed.push(box);
+    });
+  }
+
+  // compass rose and scale bar, inside the map
+  const rose = el("g", { transform: `translate(${W - 70},${H - 230})`, "pointer-events": "none", stroke: ink, "stroke-width": 1 }, world);
+  el("circle", { r: 26, fill: "none", "stroke-opacity": 0.6 }, rose);
+  el("path", { d: "M0,-38L6,0L0,38L-6,0Z", fill: paper }, rose);
+  el("path", { d: "M0,-38L6,0L-6,0Z", fill: ink }, rose);
+  el("path", { d: "M-30,0L0,4L30,0L0,-4Z", fill: paper }, rose);
+  el("text", { y: -44, "text-anchor": "middle", class: "rname", style: "font-size:14px", stroke: "none" }, rose).textContent = "N";
+  const pxPerKm = 0.54; // at this latitude
+  const scale = el("g", { transform: `translate(${W - 170},${H - 60})`, "pointer-events": "none" }, world);
+  [0, 1, 2, 3].forEach(i => el("rect", { x: i * 50 * pxPerKm, y: 0, width: 50 * pxPerKm, height: 5, fill: i % 2 ? paper : ink, stroke: ink, "stroke-width": 0.8 }, scale));
+  el("text", { x: 0, y: -6, class: "city" }, scale).textContent = "200 km";
+
+  // Muqali's column
+  const column = el("g", { "pointer-events": "none" }, world);
+  el("g", {}, column).innerHTML = helmet();
+  el("text", { x: 19, y: -12, class: "city", style: "font-weight:600" }, column).textContent = "Muqali";
+
+  // paper: grain, stains and darkened edges on top of everything
+  el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, filter: "url(#blotch)", "pointer-events": "none", style: "mix-blend-mode:multiply" }, world);
+  el("rect", { x: -50, y: -50, width: W + 100, height: H + 100, filter: "url(#grain)", "pointer-events": "none", opacity: 0.7 }, world);
+  el("rect", { x: 0, y: 0, width: W, height: H, fill: "url(#vignette)", "pointer-events": "none" }, svg);
+
+  function paint() {
+    cells.forEach((p, i) => {
+      const f = regionFill(REGIONS[i], layer);
+      p.setAttribute("fill", f ?? "transparent");
+      p.setAttribute("fill-opacity", String(f ? 0.42 : 0));
+    });
+    selPath.setAttribute("d", selected ? vor.renderCell(selected.id) : "");
+  }
+  function showTip(text: string, e: PointerEvent) {
+    const b = stage.getBoundingClientRect();
+    tip.hidden = false;
+    tip.textContent = text;
+    tip.style.left = e.clientX - b.left + "px";
+    tip.style.top = e.clientY - b.top + "px";
+  }
+  function select(r: Region) {
+    selected = r;
+    paint();
+    opts.onSelectRegion?.(r);
+  }
+
+  // zoom and panning
+  let vb = { x: 0, y: 0, w: W, h: H };
+  let drag: { x: number; y: number; vx: number; vy: number } | null = null, moved = false;
+  const setVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  function clampVB() {
+    vb.w = Math.min(W, Math.max(W / 6, vb.w)); vb.h = (vb.w * H) / W;
+    vb.x = Math.min(W - vb.w, Math.max(0, vb.x)); vb.y = Math.min(H - vb.h, Math.max(0, vb.y));
+  }
+  function zoomAt(f: number, cx: number, cy: number) {
+    const nw = vb.w * f;
+    vb.x = cx - ((cx - vb.x) * nw) / vb.w; vb.y = cy - ((cy - vb.y) * nw) / vb.w; vb.w = nw;
+    clampVB(); setVB();
+  }
+  function svgPoint(e: MouseEvent): Point {
+    const b = svg.getBoundingClientRect();
+    return [vb.x + ((e.clientX - b.left) * vb.w) / b.width, vb.y + ((e.clientY - b.top) * vb.h) / b.height];
+  }
+  svg.addEventListener("wheel", e => { e.preventDefault(); const [x, y] = svgPoint(e); zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, x, y); }, { passive: false });
+  svg.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y }; moved = false; });
+  window.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!moved && Math.hypot(dx, dy) < 4) return;
+    moved = true; svg.classList.add("drag"); tip.hidden = true;
+    const b = svg.getBoundingClientRect();
+    vb.x = drag.vx - (dx * vb.w) / b.width; vb.y = drag.vy - (dy * vb.h) / b.height;
+    clampVB(); setVB();
+  });
+  window.addEventListener("pointerup", () => { drag = null; svg.classList.remove("drag"); setTimeout(() => (moved = false), 0); });
+
+  paint();
+  layoutLabels();
+  // the map fonts arrive after the first draw: once they are ready, lay out the labels again
+  Promise.all(['15px "IM Fell English SC"', 'italic 13px "IM Fell English"'].map(f => document.fonts.load(f).catch(() => null)))
+    .then(() => document.fonts.ready)
+    .then(layoutLabels);
+  document.fonts.addEventListener("loadingdone", layoutLabels);
+
+  return {
+    setLayer(l) { layer = l; paint(); },
+    zoom(f) { zoomAt(f, vb.x + vb.w / 2, vb.y + vb.h / 2); },
+    resetView() { vb = { x: 0, y: 0, w: W, h: H }; setVB(); },
+    placeColumn(lon, lat) { const [x, y] = project(lon, lat); column.setAttribute("transform", `translate(${x},${y})`); },
+  };
+}
