@@ -11,9 +11,34 @@
   <body>
     <div class="wrap">
       <header>
-        <span class="label">Prototype · layer 0 in progress</span>
-        <h1>Northern China, 1217</h1>
+        <span class="label">Prototype · layer 0</span>
+        <h1>Into Shanxi, 1218</h1>
+        <p class="note">Take Muqali's column from Datong to Taiyuan and keep the horses alive. Click a place on the map to march there. Horses only eat by grazing: every hour on the road is an hour less to eat.</p>
       </header>
+
+      <div class="bar" id="start">
+        <span>Take sheep along:</span>
+        <div class="group" role="group" aria-label="Flock" id="flocks"></div>
+        <button id="begin" class="primary">Start</button>
+      </div>
+
+      <div class="bar" id="controls" hidden>
+        <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
+        <div class="group" role="group" aria-label="Time">
+          <button id="play" aria-pressed="false">Play</button>
+          <span class="group" id="speeds"></span>
+        </div>
+        <div class="group" role="group" aria-label="Pace" id="paces">
+          <button data-pace="grazing">Grazing</button>
+          <button data-pace="normal">Normal</button>
+          <button data-pace="forced">Forced</button>
+        </div>
+        <div class="group">
+          <button id="halt">Halt</button>
+          <button id="drop">Leave flock</button>
+          <button id="take">Take flock</button>
+        </div>
+      </div>
 
       <div class="group" id="layers" role="group" aria-label="Layer">
         <button data-layer="map" aria-pressed="false">Map only</button>
@@ -29,12 +54,16 @@
           <button id="zout" aria-label="Zoom out">−</button>
           <button id="zreset" aria-label="Full view" style="font-size: 13px">⤢</button>
         </div>
-        <div class="cartouche"><b>Map of Northern China</b><i>at the time of Muqali's campaign, year 1217</i></div>
+        <div class="cartouche"><b>Map of Northern China</b><i>at the time of Muqali's campaign, year 1218</i></div>
         <div class="tip" id="tip" hidden></div>
       </div>
 
       <div class="row">
-        <div class="info" id="info"><h3>No region selected</h3><p class="note">Click a region or a pass to see its details.</p></div>
+        <div class="info" id="column"></div>
+        <div class="info" id="info"><h3>No place selected</h3><p class="note">Click a place on the map to see its pasture and to march there.</p></div>
+      </div>
+      <div class="row">
+        <div class="info"><h3>Journal</h3><ol class="log" id="log"></ol></div>
         <div class="info"><h3 id="leg-title">Legend</h3><dl id="legend"></dl></div>
       </div>
     </div>
