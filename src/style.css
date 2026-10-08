@@ -36,11 +36,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .region:hover { fill-opacity: .62 !important; }
 .border { fill: none; stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 1 3.2; stroke-linecap: round; pointer-events: none; }
 .sel { fill: none; stroke: var(--label); stroke-width: 2.6; pointer-events: none; }
-.rname { font: 15px var(--f-map); fill: var(--label); letter-spacing: .14em; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-opacity: .8; pointer-events: none; }
-.city { font: italic 12.5px var(--f-map-it); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 2.6px; stroke-opacity: .85; pointer-events: none; }
-.pass { cursor: pointer; }
+.rname { font: 15px var(--f-map); font-size: calc(15px * var(--ls, 1)); fill: var(--label); letter-spacing: .14em; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-opacity: .8; pointer-events: none; }
+.city { font: italic 12.5px var(--f-map-it); font-size: calc(12.5px * var(--ls, 1)); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 2.6px; stroke-opacity: .85; pointer-events: none; }
+.pass, .site { cursor: pointer; }
+.city.small { font-size: calc(11px * var(--ls, 1)); }
 .pass:hover .pmark, .pass:focus .pmark { stroke-width: 3.2; }
-.pname { font: italic 13px var(--f-map-it); fill: var(--label); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-opacity: .9; pointer-events: none; }
+.pname { font: italic 13px var(--f-map-it); font-size: calc(13px * var(--ls, 1)); fill: var(--label); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-opacity: .9; pointer-events: none; }
 .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--paper); font: 13px var(--f-body); padding: 6px 9px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, calc(-100% - 12px)); z-index: 3; }
 .zoom { position: absolute; right: 10px; top: 10px; display: grid; gap: 6px; z-index: 2; }
 .zoom button { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; background: var(--paper); color: var(--ink); border-color: var(--ink-soft); }
@@ -57,3 +58,16 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; f
 dt { color: var(--muted); }
 dd { margin: 0; }
 .note { font-size: 13px; color: var(--muted); max-width: 75ch; margin: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.bar[hidden] { display: none; }
+.clock { display: grid; min-width: 11em; font-variant-numeric: tabular-nums; }
+.clock b { font-family: var(--f-map); font-weight: 400; font-size: 1.15rem; }
+.clock span { font-size: 13px; color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.meter { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.meter i { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.meter i b { display: block; height: 100%; background: var(--accent); }
+.log { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 14em; overflow-y: auto; font-size: 14px; }
+.log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
+.info .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }

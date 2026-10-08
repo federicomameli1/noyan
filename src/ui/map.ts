@@ -1,7 +1,7 @@
 // Map view: draws the hand-drawn map in SVG and handles zoom, panning and selection.
 // It reads data from the simulation (src/sim) and never changes it.
 import { Delaunay } from "d3-delaunay";
-import { CITIES, REGIONS, ROADS, project, type Point, type Region } from "../sim";
+import { CITIES, REGIONS, ROADS, project, type Graph, type Point, type Region, type Site } from "../sim";
 import { GEO, type Pass } from "./geo";
 
 export type Layer = "map" | "terrain" | "pasture" | "political" | "diplomatic";
@@ -17,6 +17,9 @@ export interface MapOptions {
   tooltip: HTMLElement;
   onSelectRegion?: (r: Region) => void;
   onSelectPass?: (p: Pass) => void;
+  /** movement graph of the scenario, drawn over the map */
+  graph?: Graph;
+  onSelectSite?: (s: Site) => void;
 }
 
 export interface GameMap {
@@ -25,6 +28,12 @@ export interface GameMap {
   resetView(): void;
   /** moves Muqali's column icon to a (lon, lat) point */
   placeColumn(lon: number, lat: number): void;
+  /** draws the planned route, as (lon, lat) points; empty to clear it */
+  setRoute(points: readonly (readonly [number, number])[]): void;
+  /** highlights a site of the graph, or none */
+  selectSite(id: string | null): void;
+  /** zooms onto a (lon, lat) box */
+  focus(lon0: number, lat0: number, lon1: number, lat1: number): void;
 }
 
 const NS = "http://www.w3.org/2000/svg";
@@ -194,6 +203,15 @@ export function createMap(opts: MapOptions): GameMap {
   const roadG = el("g", { fill: "none", stroke: C("--road"), "stroke-width": 1.5, "stroke-dasharray": "5 3.5", "stroke-linecap": "round", "stroke-opacity": 0.85, "pointer-events": "none", filter: "url(#wobble)" }, world);
   roads.forEach(r => el("path", { d: smooth(r) }, roadG));
 
+  // movement graph: links and route, under passes and cities
+  const graph = opts.graph;
+  const linkG = el("g", { fill: "none", stroke: ink, "stroke-linecap": "round", "pointer-events": "none", "stroke-opacity": 0.55 }, world);
+  graph?.links.forEach(l => {
+    const [ax, ay] = project(graph.site(l.a).lon, graph.site(l.a).lat), [bx, by] = project(graph.site(l.b).lon, graph.site(l.b).lat);
+    el("path", { d: `M${ax.toFixed(1)},${ay.toFixed(1)}L${bx.toFixed(1)},${by.toFixed(1)}`, "stroke-width": l.kind === "road" ? 0.9 : 0.7, "stroke-dasharray": l.kind === "road" ? "" : l.kind === "track" ? "3 2" : "1 2" }, linkG);
+  });
+  const routePath = el("path", { fill: "none", stroke: C("--label"), "stroke-width": 2.2, "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-dasharray": "6 3", "pointer-events": "none" }, world);
+
   // labels: collected here and then arranged by layoutLabels() to avoid overlaps
   type Candidate = [number, number, string];
   interface Box { x: number; y: number; width: number; height: number }
@@ -205,10 +223,14 @@ export function createMap(opts: MapOptions): GameMap {
     yanmen: [-11, 4, "end"], niangzi: [0, 25, "middle"], tongguan: [0, -17, "middle"], yuguan: [10, 16, "start"],
   };
   const passG = el("g", {}, world);
+  /** pass symbols shrink with the labels when zooming in */
+  const passGlyphs: [SVGGElement, number, number][] = [];
   GEO.passes.forEach(p => {
     const g = el("g", { class: "pass", tabindex: 0, role: "button", "aria-label": p.name }, passG);
-    el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, g);
-    el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+    const glyph = el("g", {}, g);
+    passGlyphs.push([glyph, p.x, p.y]);
+    el("circle", { cx: p.x, cy: p.y, r: 12, fill: paper, stroke: C("--road"), "stroke-width": 1, "stroke-opacity": 0.7 }, glyph);
+    el("path", { class: "pmark", d: `M${p.x - 7},${p.y - 7}Q${p.x - 2},${p.y} ${p.x - 7},${p.y + 7}M${p.x + 7},${p.y - 7}Q${p.x + 2},${p.y} ${p.x + 7},${p.y + 7}`, fill: "none", stroke: C("--road"), "stroke-width": 2.4, "stroke-linecap": "round" }, glyph);
     const [dx, dy, anc] = PASS_LABEL[p.id] ?? [10, -8, "start"];
     const t = el("text", { x: p.x + dx, y: p.y + dy, "text-anchor": anc, class: "pname" }, g);
     t.textContent = p.name.replace(" Pass", "");
@@ -237,6 +259,41 @@ export function createMap(opts: MapOptions): GameMap {
     toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
   });
 
+  // sites of the movement graph: clickable, labelled when they are towns or pastures
+  const siteG = el("g", {}, world);
+  const selRing = el("circle", { r: 7, fill: "none", stroke: C("--label"), "stroke-width": 2, "pointer-events": "none" });
+  const drawnCities = new Set(CITIES.map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
+  graph?.sites.forEach(site => {
+    const [x, y] = project(site.lon, site.lat);
+    const g = el("g", { class: "site", tabindex: 0, role: "button", "aria-label": site.name }, siteG);
+    el("circle", { cx: x, cy: y, r: 7, fill: "transparent" }, g);
+    if (site.kind === "pasture") {
+      el("path", { d: `M${x - 4},${y - 2}L${x - 1},${y + 2}L${x + 1},${y - 3}M${x + 1},${y + 2}L${x + 4},${y - 2}`, fill: "none", stroke: C("--p-high"), "stroke-width": 1.4, "stroke-linecap": "round" }, g);
+    } else if (site.kind === "pass" && !drawnPasses.has(site.id)) {
+      el("path", { d: `M${x - 4},${y - 4}Q${x - 1},${y} ${x - 4},${y + 4}M${x + 4},${y - 4}Q${x + 1},${y} ${x + 4},${y + 4}`, fill: "none", stroke: C("--road"), "stroke-width": 1.8, "stroke-linecap": "round" }, g);
+    } else if (site.kind === "junction") {
+      el("circle", { cx: x, cy: y, r: 2.2, fill: paper, stroke: ink, "stroke-width": 0.9 }, g);
+    } else if (site.kind === "city" && !drawnCities.has(site.name)) {
+      el("rect", { x: x - 2.5, y: y - 2.5, width: 5, height: 5, fill: paper, stroke: ink, "stroke-width": 1 }, g);
+    }
+    const labelled = (site.kind === "city" && !drawnCities.has(site.name)) || site.kind === "pasture" || (site.kind === "pass" && !drawnPasses.has(site.id));
+    if (labelled) {
+      const t = el("text", { x: x + 7, y: y + 3, class: site.kind === "pass" ? "pname" : "city small" }, g);
+      t.textContent = site.kind === "pass" ? site.name.replace(" Pass", "") : site.name;
+      toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING.map(([dx, dy, a]) => [dx * 0.8, dy * 0.85, a] as Candidate) });
+    }
+    obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
+    const show = (e: PointerEvent) => { if (!drag) showTip(site.name, e); };
+    g.addEventListener("pointerenter", show);
+    g.addEventListener("pointermove", show);
+    g.addEventListener("pointerleave", () => { tip.hidden = true; });
+    const pick = () => { if (!moved) opts.onSelectSite?.(site); };
+    g.addEventListener("click", pick);
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+  siteG.appendChild(selRing);
+  selRing.style.display = "none";
+
   // region names
   const nameG = el("g", {}, world);
   REGIONS.forEach((r, i) => {
@@ -254,9 +311,11 @@ export function createMap(opts: MapOptions): GameMap {
     const hit = (a: Box, b: Box) => !(a.x + a.width + pad < b.x || b.x + b.width + pad < a.x || a.y + a.height + pad < b.y || b.y + b.height + pad < a.y);
     const area = (a: Box, b: Box) =>
       Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    const ls = Math.pow(vb.w / W, 0.75);
     [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
       let best: [number, number, string, Box] | null = null, bestCost = Infinity;
-      for (const [dx, dy, anc] of L.cands) {
+      for (const [cx, cy, anc] of L.cands) {
+        const dx = cx * ls, dy = cy * ls;
         L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
         const b = L.el.getBBox();
         const outside = b.x < 4 || b.y < 4 || b.x + b.width > W - 4 || b.y + b.height > H - 4 ? 1e6 : 0;
@@ -317,7 +376,16 @@ export function createMap(opts: MapOptions): GameMap {
   // zoom and panning
   let vb = { x: 0, y: 0, w: W, h: H };
   let drag: { x: number; y: number; vx: number; vy: number } | null = null, moved = false;
-  const setVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  // labels shrink when zooming in, so they stay readable without covering the map
+  let relayout = 0;
+  const setVB = () => {
+    svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    const ls = Math.pow(vb.w / W, 0.75);
+    svg.style.setProperty("--ls", String(ls));
+    for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${Math.max(0.5, ls)}) translate(${-x},${-y})`);
+    clearTimeout(relayout);
+    relayout = window.setTimeout(layoutLabels, 150);
+  };
   function clampVB() {
     vb.w = Math.min(W, Math.max(W / 6, vb.w)); vb.h = (vb.w * H) / W;
     vb.x = Math.min(W - vb.w, Math.max(0, vb.x)); vb.y = Math.min(H - vb.h, Math.max(0, vb.y));
@@ -356,6 +424,20 @@ export function createMap(opts: MapOptions): GameMap {
     setLayer(l) { layer = l; paint(); },
     zoom(f) { zoomAt(f, vb.x + vb.w / 2, vb.y + vb.h / 2); },
     resetView() { vb = { x: 0, y: 0, w: W, h: H }; setVB(); },
-    placeColumn(lon, lat) { const [x, y] = project(lon, lat); column.setAttribute("transform", `translate(${x},${y})`); },
+    placeColumn(lon, lat) { const [x, y] = project(lon, lat); column.setAttribute("transform", `translate(${x},${y}) scale(${Math.max(0.55, Math.pow(vb.w / W, 0.45))})`); },
+    setRoute(points) {
+      routePath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
+    },
+    selectSite(id) {
+      const site = id ? graph?.sites.find(s => s.id === id) : undefined;
+      selRing.style.display = site ? "" : "none";
+      if (site) { const [x, y] = project(site.lon, site.lat); selRing.setAttribute("cx", String(x)); selRing.setAttribute("cy", String(y)); }
+    },
+    focus(lon0, lat0, lon1, lat1) {
+      const [x0, y0] = project(lon0, lat1), [x1, y1] = project(lon1, lat0);
+      const w = Math.max(x1 - x0, ((y1 - y0) * W) / H), h = (w * H) / W;
+      vb = { x: (x0 + x1 - w) / 2, y: (y0 + y1 - h) / 2, w, h };
+      clampVB(); setVB();
+    },
   };
 }
