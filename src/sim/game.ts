@@ -35,6 +35,12 @@ export interface Column {
   /** set by a halt order: the column stays where it is, even halfway along a link */
   halted: boolean;
   today: { marchHours: number; km: number };
+  /** the city being besieged, if any */
+  siege: string | null;
+  /** engineers taken from a captured city: sieges go faster */
+  engineers: boolean;
+  /** days of grain for the horses, from captured granaries */
+  grain: number;
   /** last values reported in the log, to report only changes */
   reported: { band: ConditionBand; foodDays: number; starving: boolean };
 }
@@ -44,6 +50,17 @@ export interface SiteState {
   grazed: number;
   /** sheep left here by a column */
   sheep: number;
+}
+
+export interface CityState {
+  garrison: number;
+  walls: number;
+  /** days of food left inside the walls */
+  stores: number;
+  storesAtStart: number;
+  /** 0-100: at 100 the city falls */
+  progress: number;
+  taken: boolean;
 }
 
 export interface LogEntry {
@@ -58,8 +75,10 @@ export interface GameState {
   hour: number;
   columns: Column[];
   sites: Record<string, SiteState>;
+  cities: Record<string, CityState>;
   log: LogEntry[];
   over: boolean;
+  result: "victory" | "defeat" | null;
 }
 
 export type ConditionBand = "fat" | "fit" | "thin" | "exhausted";
@@ -73,12 +92,17 @@ export function newGame(sheep = 0): GameState {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
     condition: c.condition, fatigue: 0, pace: "normal", at: SCENARIO.base, leg: null, route: [], halted: false,
-    today: { marchHours: 0, km: 0 }, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false },
+    today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false },
   };
   col.reported.foodDays = foodDays(col);
   const sites: Record<string, SiteState> = {};
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0 };
-  return { hour: 0, columns: [col], sites, log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men.` }], over: false };
+  const cities: Record<string, CityState> = {};
+  for (const [id, x] of Object.entries(SCENARIO.cities)) cities[id] = { ...x, storesAtStart: x.stores, progress: 0, taken: false };
+  return {
+    hour: 0, columns: [col], sites, cities, over: false, result: null,
+    log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring.` }],
+  };
 }
 
 export const dateOf = (s: GameState): GameDate => addHours(SCENARIO.start, s.hour);
@@ -189,6 +213,7 @@ export function orderMarch(s: GameState, ci: number, dest: string): boolean {
   const c = s.columns[ci];
   const plan = planRoute(c, dest);
   if (!plan) return false;
+  if (c.siege && dest !== c.siege) liftSiege(s, c);
   if (plan.turnBack) {
     const l = c.leg!;
     c.leg = { from: l.to, to: l.from, done: l.km - l.done, km: l.km };
@@ -203,6 +228,90 @@ function routeKm(p: string[]): number {
   let km = 0;
   for (let i = 1; i < p.length; i++) km += linkBetween(graph, p[i - 1], p[i])!.km;
   return km;
+}
+
+// --- sieges ---
+
+/** Siege progress a day for this column against this city. */
+export function siegeRate(c: Column, city: CityState): number {
+  return (R.SIEGE_RATE * (c.men / city.garrison)) / city.walls * (c.engineers ? R.ENGINEER_FACTOR : 1);
+}
+
+/** Days until the city falls if the siege goes on as now: by progress or by hunger, whichever comes first. */
+export function siegeDays(c: Column, city: CityState): number {
+  return Math.min(Math.ceil((100 - city.progress) / siegeRate(c, city)), Math.ceil(city.stores));
+}
+
+/** Men a storm would cost now. */
+export const stormCost = (city: CityState) => Math.round(city.garrison * city.walls * (1 - city.progress / 100) * R.STORM_COST);
+
+/** Can this column besiege the city where it stands? */
+export const canBesiege = (s: GameState, c: Column) => !!c.at && !!s.cities[c.at] && !s.cities[c.at].taken && c.siege !== c.at;
+
+export function orderSiege(s: GameState, ci: number): boolean {
+  const c = s.columns[ci];
+  if (!canBesiege(s, c)) return false;
+  c.siege = c.at;
+  c.route = [];
+  log(s, `${c.name} lays siege to ${graph.site(c.at!).name}.`);
+  return true;
+}
+
+function liftSiege(s: GameState, c: Column) {
+  log(s, `${c.name} lifts the siege of ${graph.site(c.siege!).name}.`);
+  c.siege = null;
+}
+
+/** True if a storm now would leave the column too weak to go on, so it fails. */
+export const stormFails = (c: Column, city: CityState) => c.men - stormCost(city) < R.DEFEAT_MEN;
+
+/** Takes the besieged city by storm, at once, paying in men. Fails if too few men would be left. */
+export function orderStorm(s: GameState, ci: number): boolean {
+  const c = s.columns[ci];
+  if (!c.siege) return false;
+  const lost = Math.min(c.men, stormCost(s.cities[c.siege]));
+  c.men -= lost;
+  if (c.men < R.DEFEAT_MEN) {
+    log(s, `${c.name} storms ${graph.site(c.siege).name}, loses ${lost.toLocaleString("en")} men and is thrown back.`, "alert");
+  } else {
+    log(s, `${c.name} storms ${graph.site(c.siege).name} and loses ${lost.toLocaleString("en")} men.`, "warning");
+    capture(s, c, c.siege);
+  }
+  checkEnd(s);
+  return true;
+}
+
+function capture(s: GameState, c: Column, id: string) {
+  const city = s.cities[id];
+  const full = city.stores / city.storesAtStart;
+  city.taken = true;
+  city.stores = 0;
+  c.siege = null;
+  const rations = Math.max(0, Math.min(full * city.storesAtStart * city.garrison, c.men * R.MAX_RATION_DAYS - c.rations));
+  c.rations += rations;
+  c.grain = Math.max(c.grain, R.GRAIN_DAYS * full);
+  const gains = [`${Math.round(rations / Math.max(1, c.men))} days of food`, `${Math.round(R.GRAIN_DAYS * full)} days of grain for the horses`];
+  if (city.walls >= R.ENGINEER_WALLS && !c.engineers) { c.engineers = true; gains.push("engineers for the next sieges"); }
+  log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.`, "arrival");
+  if (id === SCENARIO.objective) {
+    s.result = "victory";
+    s.over = true;
+    log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}.`, "arrival");
+  }
+}
+
+function checkEnd(s: GameState) {
+  if (s.over) return;
+  const c = s.columns[0];
+  if (c.men < R.DEFEAT_MEN) {
+    s.result = "defeat";
+    s.over = true;
+    log(s, `Defeat: ${c.name} has fewer than ${R.DEFEAT_MEN.toLocaleString("en")} men and can no longer campaign.`, "alert");
+  } else if (s.hour >= totalHours()) {
+    s.result = "defeat";
+    s.over = true;
+    log(s, `Defeat: spring has come and ${graph.site(SCENARIO.objective).name} still stands.`, "alert");
+  }
 }
 
 export function orderHalt(s: GameState, ci: number) {
@@ -248,10 +357,7 @@ export function step(s: GameState) {
   for (const c of s.columns) stepColumn(s, c, hourOfDay);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
-  if (s.hour >= totalHours()) {
-    s.over = true;
-    log(s, `The season is over: ${formatDate(dateOf(s))}.`);
-  }
+  checkEnd(s);
 }
 
 function stepColumn(s: GameState, c: Column, hourOfDay: number) {
@@ -299,7 +405,12 @@ function endOfDay(s: GameState) {
     const grazeHours = Math.min(R.MAX_GRAZE_HOURS, 24 - c.today.marchHours - R.CAMP_HOURS) + c.today.marchHours * pace.grazeWhileMarching;
     const density = pastureDensity(site, month, st);
     const eaten = ((R.GRAZE_MAX_KG_PER_HOUR * density) / (density + R.GRAZE_HALF_DENSITY)) * grazeHours;
-    const ratio = (eaten * quality) / need;
+    let ratio = (eaten * quality) / need;
+    if (c.grain > 0) {
+      // captured grain: the horses are fed whatever the pasture
+      ratio = Math.max(ratio, 1.5);
+      c.grain = Math.max(0, c.grain - 1);
+    }
     const delta = R.CONDITION_RATE * (ratio - 1);
     c.condition = clamp(c.condition + clamp(delta, -R.CONDITION_MAX_LOSS, R.CONDITION_MAX_GAIN), 0, 100);
     st.grazed += (c.horses * eaten + c.sheep * R.SHEEP_GRAZE_KG) / 1000;
@@ -315,6 +426,15 @@ function endOfDay(s: GameState) {
     if (c.fatigue > 90 && c.today.marchHours > 0) deaths += R.DEATHS_EXHAUSTED;
     const dead = c.horses * deaths;
     c.horses -= dead;
+
+    // siege: progress and the city's hunger
+    if (c.siege) {
+      const city = s.cities[c.siege];
+      city.progress = Math.min(100, city.progress + siegeRate(c, city));
+      city.stores = Math.max(0, city.stores - 1);
+      if (city.progress >= 100 || city.stores <= 0) capture(s, c, c.siege);
+      if (s.over) return;
+    }
 
     // men: personal rations, then sheep, then horses
     let hunger = c.men;

@@ -1,7 +1,8 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  foodDays, formatDate, newGame, orderHalt, orderMarch, pastureDensity, planRoute, setPace, speedFactor, step, takeFlock,
+  canBesiege, foodDays, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  speedFactor, step, stormCost, stormFails, takeFlock,
   type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import { LABELS, cssVar, createMap, helmet, mix, type Layer } from "./ui/map";
@@ -107,6 +108,15 @@ function march(id: string) {
   setPlaying(true);
 }
 
+function storm() {
+  const c = game.columns[0];
+  if (!c.siege) return;
+  const name = graph.site(c.siege).name;
+  if (!confirm(`Storm ${name} now? You will lose about ${fmt(stormCost(game.cities[c.siege]))} men.`)) return;
+  orderStorm(game, 0);
+  render();
+}
+
 // --- place card ---
 function selectSite(s: Site, desc?: string) {
   selected = s;
@@ -137,8 +147,13 @@ function renderPlace() {
   const plan = planRoute(c, s.id);
   const here = c.at === s.id;
   const food = foodDays(c);
+  const city = game.cities[s.id];
   let route = "";
-  if (here) route = `<div class="route">${c.name}'s column is here.</div>`;
+  if (here && city && !city.taken) {
+    route = c.siege === s.id
+      ? `<div class="route">Besieged: ${Math.floor(city.progress)}%, falls in about ${siegeDays(c, city)} days if the siege goes on.</div>`
+      : `<div class="route">A siege would take about ${siegeDays(c, city)} days${c.engineers ? " with your engineers" : ""}.</div>`;
+  } else if (here) route = `<div class="route">${c.name}'s column is here.</div>`;
   else if (plan) {
     const short = food < plan.days;
     route = `<div class="route">${fmt(plan.km)} km, ${days(plan.days)} at the ${effectivePace(c)} pace.${short ? ` <b style="color:var(--bad)">Food lasts ${Math.floor(food)} days.</b>` : ""}</div>`;
@@ -148,16 +163,23 @@ function renderPlace() {
     ${selectedDesc ? `<p class="note" style="margin-top:4px">${selectedDesc}</p>` : ""}
     <dl>
       <dt>Terrain</dt><dd>${LABELS.terrain[s.terrain]}</dd>
-      <dt>Held by</dt><dd>${LABELS.political[s.control]}</dd>
+      <dt>Held by</dt><dd>${city?.taken ? "Mongols, taken" : LABELS.political[s.control]}</dd>
+      ${city && !city.taken ? `<dt>Garrison</dt><dd>${fmt(city.garrison)} men</dd>
+      <dt>Walls</dt><dd>${city.walls >= 3 ? "Strong" : city.walls >= 1.5 ? "Fair" : "Weak"}${city.walls >= 1.5 ? ", has engineers" : ""}</dd>
+      <dt>Stores</dt><dd>${Math.ceil(city.stores)} days</dd>` : ""}
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
     </dl>
     ${route}
-    ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}`);
+    ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
+    ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
+    ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
   if (changed) {
     info.querySelector<HTMLButtonElement>(".close")!.onclick = closePlace;
     info.querySelector<HTMLButtonElement>("#go")?.addEventListener("click", () => march(s.id));
+    info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, 0); setPlaying(true); });
+    info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
   }
 }
 
@@ -186,7 +208,8 @@ function renderColumn() {
   const c = game.columns[0];
   const camp = campSite(c);
   const dest = c.route.at(-1) ?? c.leg?.to;
-  const status = c.at
+  const besieged = c.siege ? game.cities[c.siege] : null;
+  const status = c.siege ? `Besieging ${graph.site(c.siege).name}` : c.at
     ? (c.route.length && !c.halted ? `Leaving ${graph.site(c.at).name} for ${graph.site(dest!).name}` : `Camped at ${graph.site(c.at).name}`)
     : c.halted ? `Halted on the way to ${graph.site(c.leg!.to).name}` : `Marching to ${graph.site(dest!).name}`;
   const pace = effectivePace(c);
@@ -197,7 +220,7 @@ function renderColumn() {
   const changed = setHTML($("column"), `<button class="fold icon" aria-label="${folded ? "Show details" : "Hide details"}" aria-expanded="${!folded}">${folded ? "▴" : "▾"}</button>
     <h2>${c.name}</h2>
     <p class="status">${status}</p>
-    <p class="compact">Condition ${c.condition.toFixed(0)} · fatigue ${c.fatigue.toFixed(0)} · food ${Math.floor(food)} days · ${fmt(c.horses)} horses</p>
+    <p class="compact">${besieged ? `Siege ${Math.floor(besieged.progress)}% · ` : ""}condition ${c.condition.toFixed(0)} · fatigue ${c.fatigue.toFixed(0)} · food ${Math.floor(food)} days · ${fmt(c.horses)} horses</p>
     <div class="stats">
       <div><b>${fmt(c.men)}</b><span>men</span></div>
       <div><b>${fmt(c.horses)}</b><span>horses</span></div>
@@ -208,12 +231,15 @@ function renderColumn() {
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
+    ${besieged ? bar("Siege", besieged.progress, "ok", `${siegeDays(c, besieged)} days`) : ""}
+    ${c.engineers || c.grain > 0 ? `<p class="note">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(" · ")}</p>` : ""}
     <div class="orders">
       <div class="seg" role="group" aria-label="Pace">
         ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}
       </div>
       <div class="seg">
-        <button id="halt" ${c.halted || (!c.leg && !c.route.length) ? "disabled" : ""}>Halt</button>
+        ${canBesiege(game, c) ? `<button id="siege" class="primary">Lay siege</button>` : ""}
+        ${besieged ? `<button id="storm" ${stormFails(c, besieged) ? "disabled title=\"Too few men to storm yet\"" : ""}>Storm, −${fmt(stormCost(besieged))} men</button>` : `<button id="halt" ${c.halted || (!c.leg && !c.route.length) ? "disabled" : ""}>Halt</button>`}
         ${c.sheep > 0 ? `<button id="drop" ${c.at ? "" : "disabled"}>Leave flock</button>` : ""}
         ${flockHere > 0 ? `<button id="take">Take ${fmt(flockHere)} sheep</button>` : ""}
       </div>
@@ -224,6 +250,8 @@ function renderColumn() {
   col.querySelector<HTMLButtonElement>(".fold")!.onclick = () => { folded = !folded; col.classList.toggle("collapsed", folded); render(); };
   col.querySelectorAll<HTMLButtonElement>("[data-pace]").forEach(b => { b.onclick = () => { setPace(game, 0, b.dataset.pace as PaceId); render(); }; });
   col.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, 0); render(); });
+  col.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, 0); setPlaying(true); });
+  col.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
   col.querySelector<HTMLButtonElement>("#drop")?.addEventListener("click", () => { dropFlock(game, 0); render(); });
   col.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, 0); render(); });
 }
@@ -236,11 +264,16 @@ function renderLog() {
   $("log").dataset.count = String(game.log.length);
   $("log").innerHTML = game.log.slice().reverse().map(l => `<li class="${l.kind ?? ""}"><span>${shortDate(l.hour)}</span>${l.text}</li>`).join("");
   // new entries become notices; an arrival or an alert pauses the game so the player can react
+  let arrived = false;
   for (const l of game.log.slice(logSeen)) {
     toast(l);
     if ((l.kind === "arrival" || l.kind === "alert") && playing) playing = false;
+    if (l.kind === "arrival") arrived = true;
   }
   logSeen = game.log.length;
+  // reaching a Jin town opens its card, where the siege starts
+  const c = game.columns[0];
+  if (arrived && c.at && canBesiege(game, c) && selected?.id !== c.at) selectSite(graph.site(c.at));
 }
 function toast(l: LogEntry) {
   const box = $("toasts");
@@ -275,7 +308,8 @@ function render() {
   renderLog(); // first: a new arrival or alert pauses the game, and the rest must show that
   const d = dateOf(game);
   $("date").textContent = formatDate(d);
-  $("clock-hour").textContent = game.over ? "The season is over" : `${String(d.hour).padStart(2, "0")}:00 · ${playing ? `${speed}× speed` : "paused"}`;
+  if (game.over && $("end").hidden) showEnd();
+  $("clock-hour").textContent = game.over ? "The campaign is over" : `${String(d.hour).padStart(2, "0")}:00 · ${playing ? `${speed}× speed` : "paused"}`;
   $("play").textContent = playing ? "❚❚" : "▶";
   $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
@@ -285,6 +319,21 @@ function render() {
   renderColumn();
   renderPlace();
 }
+
+// --- end of the game ---
+function showEnd() {
+  const c = game.columns[0];
+  const taken = Object.entries(game.cities).filter(([, x]) => x.taken).map(([id]) => graph.site(id).name);
+  const win = game.result === "victory";
+  $("end-title").textContent = win ? "Taiyuan has fallen" : "The campaign has failed";
+  setHTML($("end-body"), `<p>${game.log.at(-1)?.text ?? ""}</p><dl>
+    <dt>Date</dt><dd>${formatDate(dateOf(game))}</dd>
+    <dt>Men</dt><dd>${fmt(c.men)} of ${fmt(SCENARIO.column.men)}</dd>
+    <dt>Horses</dt><dd>${fmt(c.horses)} of ${fmt(SCENARIO.column.men * SCENARIO.column.horsesPerMan)}, ${BAND[conditionBand(c.condition)]}</dd>
+    <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd></dl>`);
+  $("end").hidden = false;
+}
+$("again").onclick = () => location.reload();
 
 // --- main loop: one simulation step per game hour ---
 const MS_PER_HOUR = (SECONDS_PER_DAY * 1000) / 24;

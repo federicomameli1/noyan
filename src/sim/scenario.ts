@@ -109,6 +109,13 @@ export const SCENARIO = {
   base: "datong",
   objective: "taiyuan",
   column: { name: "Muqali", men: 3000, horsesPerMan: 4, rationsPerMan: 20, condition: 85 },
+  /** Jin towns that can be besieged: garrison, walls (1 weak to 3 strong) and stores in days [S] */
+  cities: {
+    daizhou: { garrison: 1000, walls: 1, stores: 40 },
+    xinzhou: { garrison: 1500, walls: 1.5, stores: 45 },
+    fenzhou: { garrison: 2000, walls: 2, stores: 50 },
+    taiyuan: { garrison: 10000, walls: 3, stores: 120 },
+  } as Record<string, { garrison: number; walls: number; stores: number }>,
   /** sheep the player can take along at the start */
   flockOptions: [0, 3000, 6000],
 };
