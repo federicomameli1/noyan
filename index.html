@@ -33,7 +33,7 @@
           <button id="play" class="icon" aria-label="Pause">❚❚</button>
           <span class="seg" id="speeds"></span>
         </div>
-        <button id="menu-btn" class="icon" aria-label="Map layers and legend" aria-expanded="false">☰</button>
+        <button id="menu-btn" class="icon" aria-label="Legend and journal" aria-expanded="false">☰</button>
       </header>
 
       <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -42,18 +42,18 @@
       <aside class="hud panel place" id="info" aria-label="Selected place" hidden></aside>
 
       <div class="hud panel menu" id="menu" hidden>
-        <h3>Map</h3>
-        <div class="seg wrap" id="layers" role="group" aria-label="Layer">
-          <button data-layer="map" aria-pressed="false">Plain</button>
-          <button data-layer="terrain" aria-pressed="false">Terrain</button>
-          <button data-layer="pasture" aria-pressed="true">Pasture</button>
-          <button data-layer="political" aria-pressed="false">Political</button>
-          <button data-layer="diplomatic" aria-pressed="false">Diplomatic</button>
-        </div>
         <h3 id="leg-title">Legend</h3>
         <dl id="legend"></dl>
         <h3>Journal</h3>
         <ol class="log" id="log"></ol>
+      </div>
+
+      <div class="hud layers seg" id="layers" role="group" aria-label="Map layer">
+        <button data-layer="map" data-key="q" aria-pressed="false" title="Plain map (Q)">Plain<kbd>Q</kbd></button>
+        <button data-layer="terrain" data-key="w" aria-pressed="false" title="Terrain (W)">Terrain<kbd>W</kbd></button>
+        <button data-layer="pasture" data-key="e" aria-pressed="true" title="Pasture (E)">Pasture<kbd>E</kbd></button>
+        <button data-layer="political" data-key="r" aria-pressed="false" title="Political (R)">Political<kbd>R</kbd></button>
+        <button data-layer="diplomatic" data-key="t" aria-pressed="false" title="Diplomatic (T)">Diplomacy<kbd>T</kbd></button>
       </div>
 
       <div class="zoom">
@@ -72,12 +72,12 @@
             <li>Forced marches pay off for two or three days, then tired horses slow down and die.</li>
             <li>Sheep are food on the hoof, but the column moves at their pace.</li>
             <li>Winter grass is scarce and poor. A camp that stays put eats the grass around it.</li>
-            <li>A siege can take weeks. Smaller towns fall faster and give food, grain and engineers.</li>
+            <li>Jin strongholds come in three kinds. Towns fall fast and feed you, walled cities are slow but give engineers, fortresses close their pass until taken.</li>
           </ul>
           <p class="label">Take sheep along</p>
           <div class="seg" role="group" aria-label="Flock" id="flocks"></div>
           <button id="begin" class="primary big">Start the campaign</button>
-          <p class="note">Click a place to choose where to march. Space pauses, 1 2 3 set the speed.</p>
+          <p class="note">Click a place to choose where to march. Space pauses, 1 2 3 set the speed, Q W E R T change the map.</p>
         </div>
       </div>
       <div class="modal" id="end" hidden>

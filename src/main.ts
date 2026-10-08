@@ -2,10 +2,10 @@ import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
   canBesiege, foodDays, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
-  speedFactor, step, stormCost, stormFails, takeFlock,
-  type GameState, type LogEntry, type PaceId, type Site,
+  speedFactor, spoils, step, stormCost, stormFails, takeFlock, 
+  type CityState, type Column, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
-import { LABELS, cssVar, createMap, helmet, mix, type Layer } from "./ui/map";
+import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, mix, targetSymbol, type Layer } from "./ui/map";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const graph = SCENARIO.graph;
@@ -32,6 +32,7 @@ const map = createMap({
   container: stage,
   tooltip: $("tip"),
   graph,
+  targets: Object.fromEntries(Object.entries(SCENARIO.cities).map(([id, c]) => [id, c.type])),
   onSelectRegion: () => closePlace(),
   onSelectPass: p => {
     const site = graph.sites.find(s => s.id === p.id);
@@ -93,6 +94,12 @@ document.addEventListener("keydown", e => {
   if (n >= 1 && n <= SPEEDS.length) { speed = SPEEDS[n - 1]; setPlaying(true); }
   if (e.key === "Escape") { closePlace(); toggleMenu(false); }
 });
+// map layers work before the campaign starts too
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || document.body.classList.contains("at-title")) return;
+  const b = document.querySelector<HTMLButtonElement>(`#layers [data-key="${e.key.toLowerCase()}"]`);
+  if (b) b.click();
+});
 
 // --- menu: layers, legend, journal ---
 function toggleMenu(open: boolean = menu.hidden === true) {
@@ -139,6 +146,22 @@ function closePlace() {
 }
 
 const KIND = { city: "Town", pass: "Mountain pass", junction: "Crossroads", pasture: "Pasture grounds" };
+const TYPE_NAME = { town: "Jin town", walled: "Jin walled city", fortress: "Jin fortress" };
+const TYPE_NOTE = {
+  town: "Earthen walls and a small garrison: it falls fast. Its granaries feed men and horses.",
+  walled: "Brick walls: a long siege. Its workshops give engineers, who halve the time of later sieges.",
+  fortress: "Holds the pass: no column can march through until it falls. Starved out, part of the garrison joins you; stormed, none do.",
+};
+/** what taking a city would give now, in words */
+function spoilsText(c: Column, city: CityState) {
+  const got = spoils(c, city, false);
+  const parts = [`${Math.round(got.rations / Math.max(1, c.men))} days of food`];
+  if (got.grain >= 1) parts.push(`${Math.round(got.grain)} days of grain`);
+  if (got.engineers) parts.push("engineers");
+  if (got.recruits) parts.push(`${fmt(got.recruits)} men if starved out`);
+  if (got.opensPass) parts.push("an open pass");
+  return parts.join(", ");
+}
 const days = (d: number) => (d < 1 ? "less than a day" : `about ${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"}`);
 
 function renderPlace() {
@@ -147,7 +170,7 @@ function renderPlace() {
   const date = dateOf(game);
   const st = game.sites[s.id];
   const c = game.columns[0];
-  const plan = planRoute(c, s.id);
+  const plan = planRoute(game, c, s.id);
   const here = c.at === s.id;
   const food = foodDays(c);
   const city = game.cities[s.id];
@@ -160,16 +183,19 @@ function renderPlace() {
   else if (plan) {
     const short = food < plan.days;
     route = `<div class="route">${fmt(plan.km)} km, ${days(plan.days)} at the ${effectivePace(c)} pace.${short ? ` <b style="color:var(--bad)">Food lasts ${Math.floor(food)} days.</b>` : ""}</div>`;
-  }
+  } else route = `<div class="route">No open road: a Jin fortress holds the way.</div>`;
   const changed = setHTML(info, `<button class="close icon" aria-label="Close">✕</button>
-    <span class="label">${KIND[s.kind]}</span><h2>${s.name}</h2>
+    <span class="label">${city ? (city.taken ? `${TYPE_NAME[city.type]}, taken` : TYPE_NAME[city.type]) : KIND[s.kind]}</span><h2>${s.name}</h2>
     ${selectedDesc ? `<p class="note" style="margin-top:4px">${selectedDesc}</p>` : ""}
+    ${city && !city.taken ? `<p class="note" style="margin-top:4px">${TYPE_NOTE[city.type]}</p>` : ""}
+    ${s.kind === "city" && !city ? `<p class="note" style="margin-top:4px">No Jin garrison here: there is nothing to besiege.</p>` : ""}
     <dl>
       <dt>Terrain</dt><dd>${LABELS.terrain[s.terrain]}</dd>
       <dt>Held by</dt><dd>${city?.taken ? "Mongols, taken" : LABELS.political[s.control]}</dd>
       ${city && !city.taken ? `<dt>Garrison</dt><dd>${fmt(city.garrison)} men</dd>
-      <dt>Walls</dt><dd>${city.walls >= 3 ? "Strong" : city.walls >= 1.5 ? "Fair" : "Weak"}${city.walls >= 1.5 ? ", has engineers" : ""}</dd>
-      <dt>Stores</dt><dd>${Math.ceil(city.stores)} days</dd>` : ""}
+      <dt>Walls</dt><dd>${city.walls >= 4 ? "Very strong" : city.walls >= 3 ? "Strong" : city.walls >= 2 ? "Fair" : "Weak"}</dd>
+      <dt>Stores</dt><dd>${Math.ceil(city.stores)} days</dd>
+      <dt>Spoils</dt><dd>${spoilsText(c, city)}</dd>` : ""}
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
@@ -302,7 +328,7 @@ function renderRoute() {
 function renderPreview() {
   const target = hovered ?? selected;
   const c = game.columns[0];
-  const plan = target && started ? planRoute(c, target.id) : null;
+  const plan = target && started ? planRoute(game, c, target.id) : null;
   map.setPreview(plan && plan.sites.length ? routePoints(c, plan.sites) : []);
   if (hovered && plan && plan.sites.length) $("tip").textContent = `${hovered.name} · ${days(plan.days)}`;
 }
@@ -318,6 +344,7 @@ function render() {
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
   const [lon, lat] = columnPosition(game.columns[0]);
   map.placeColumn(lon, lat);
+  map.setTaken(Object.keys(game.cities).filter(id => game.cities[id].taken));
   renderRoute();
   renderColumn();
   renderPlace();
@@ -382,14 +409,20 @@ render();
 function legend(layer: Layer) {
   const C = cssVar;
   const sw = (c: string) => `<svg width="14" height="14" aria-hidden="true"><rect width="14" height="14" rx="2" fill="${c}"/></svg>`;
-  $("leg-title").textContent = "Legend · " + ($("layers").querySelector(`[data-layer="${layer}"]`)?.textContent ?? "").toLowerCase();
-  const symbols = `<dt><svg width="18" height="14" aria-hidden="true"><path d="M2,13Q5,9 9,2Q12,8 16,13" fill="${C("--paper")}" stroke="${C("--ink")}"/></svg></dt><dd>Mountains</dd>
+  $("leg-title").textContent = "Legend · " + ($("layers").querySelector(`[data-layer="${layer}"]`)?.firstChild?.textContent ?? "").toLowerCase();
+  const target = (type: keyof typeof TYPE_NAME, taken = false) =>
+    `<svg width="18" height="18" viewBox="-10 -12 20 22" aria-hidden="true"><g class="target${taken ? " taken" : ""}">${targetSymbol(type)}</g></svg>`;
+  const symbols = `<dt>${target("town")}</dt><dd>${TARGET_TEXT.town}</dd>
+    <dt>${target("walled")}</dt><dd>${TARGET_TEXT.walled}</dd>
+    <dt>${target("fortress")}</dt><dd>${TARGET_TEXT.fortress}</dd>
+    <dt>${target("walled", true)}</dt><dd>Taken by the Mongols</dd>
+    <dt><svg width="18" height="14" aria-hidden="true"><rect x="6" y="4" width="6" height="6" fill="${C("--paper")}" stroke="${C("--ink")}"/></svg></dt><dd>City with no Jin garrison</dd>
     <dt><svg width="18" height="14" aria-hidden="true"><circle cx="9" cy="7" r="5" fill="${C("--paper")}" stroke="${C("--ink")}"/><circle cx="9" cy="7" r="2" fill="${C("--label")}"/></svg></dt><dd>Capital</dd>
-    <dt><svg width="18" height="14" aria-hidden="true"><rect x="6" y="4" width="6" height="6" fill="${C("--paper")}" stroke="${C("--ink")}"/></svg></dt><dd>City</dd>
     <dt><svg width="18" height="14" aria-hidden="true"><path d="M3,1Q8,7 3,13M15,1Q10,7 15,13" fill="none" stroke="${C("--road")}" stroke-width="2.2" stroke-linecap="round"/></svg></dt><dd>Pass</dd>
-    <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--road")}" stroke-width="1.5" stroke-dasharray="4 3"/></svg></dt><dd>Main road</dd>
-    <dt><svg width="18" height="18" viewBox="-18 -26 36 36" aria-hidden="true">${helmet()}</svg></dt><dd>Muqali's column</dd>
-    <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".6"/></svg></dt><dd>Route between places (dotted: track or mountain path)</dd>`;
+    <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--road")}" stroke-width="1.5" stroke-opacity=".7"/></svg></dt><dd>Road</dd>
+    <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".6" stroke-dasharray="5 4"/></svg></dt><dd>Track</dd>
+    <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".7" stroke-dasharray="1 4" stroke-linecap="round"/></svg></dt><dd>Mountain path</dd>
+    <dt><svg width="18" height="18" viewBox="-18 -26 36 36" aria-hidden="true">${helmet()}</svg></dt><dd>Muqali's column</dd>`;
   let items = "";
   if (layer === "pasture") {
     items = `<dt>${sw(mix(C("--p-low"), C("--p-high"), 0.15))}</dt><dd>Poor pasture</dd><dt>${sw(mix(C("--p-low"), C("--p-high"), 0.5))}</dt><dd>Average</dd><dt>${sw(C("--p-high"))}</dt><dd>Rich pasture</dd>`;

@@ -3,7 +3,7 @@
 // passes match the drawn map; other places use the modern town, approximately.
 
 import type { GameDate } from "./calendar";
-import type { LinkKind } from "./constants";
+import type { CityType, LinkKind } from "./constants";
 import { buildGraph, type Site, type SiteKind } from "./graph";
 import type { Control, Terrain } from "./world";
 
@@ -37,10 +37,10 @@ const SITES: Row[] = [
   ["juyong", "Juyong Pass", "pass", 116.07, 40.29, "mountain", "mongols", false],
   // Xinding basin and Taiyuan
   ["daizhou", "Daizhou", "city", 112.96, 39.07, "upland", "jin"],
-  ["yuanping", "Yuanping", "junction", 112.71, 38.73, "plain", "jin"],
+  ["yuanping", "Yuanping", "city", 112.71, 38.73, "plain", "jin"],
   ["xinzhou", "Xinzhou", "city", 112.73, 38.42, "plain", "jin"],
   ["taiyuan", "Taiyuan", "city", 112.55, 37.87, "plain", "jin"],
-  ["yuci", "Yuci", "junction", 112.72, 37.68, "plain", "jin"],
+  ["yuci", "Yuci", "city", 112.72, 37.68, "plain", "jin"],
   ["pingding", "Pingding", "junction", 113.58, 37.86, "mountain", "jin"],
   ["fenzhou", "Fenzhou", "city", 111.78, 37.27, "plain", "jin"],
   // Hebei plain
@@ -109,13 +109,18 @@ export const SCENARIO = {
   base: "datong",
   objective: "taiyuan",
   column: { name: "Muqali", men: 3000, horsesPerMan: 4, rationsPerMan: 20, condition: 85 },
-  /** Jin towns that can be besieged: garrison, walls (1 weak to 3 strong) and stores in days [S] */
+  /** Jin strongholds that can be besieged: type, garrison, stores in days, and walls when they differ from the type [S] */
   cities: {
-    daizhou: { garrison: 1000, walls: 1, stores: 40 },
-    xinzhou: { garrison: 1500, walls: 1.5, stores: 45 },
-    fenzhou: { garrison: 2000, walls: 2, stores: 50 },
-    taiyuan: { garrison: 10000, walls: 3, stores: 120 },
-  } as Record<string, { garrison: number; walls: number; stores: number }>,
+    daizhou: { type: "town", garrison: 1000, stores: 40 },
+    yuanping: { type: "town", garrison: 600, stores: 30 },
+    yuci: { type: "town", garrison: 800, stores: 35 },
+    xinzhou: { type: "walled", garrison: 1500, stores: 45 },
+    fenzhou: { type: "walled", garrison: 2000, stores: 50 },
+    taiyuan: { type: "walled", garrison: 10000, stores: 120, walls: 3 },
+    yanmen: { type: "fortress", garrison: 500, stores: 20 },
+    shiling: { type: "fortress", garrison: 600, stores: 20 },
+    niangzi: { type: "fortress", garrison: 500, stores: 20 },
+  } as Record<string, { type: CityType; garrison: number; stores: number; walls?: number }>,
   /** sheep the player can take along at the start */
   flockOptions: [0, 3000, 6000],
 };

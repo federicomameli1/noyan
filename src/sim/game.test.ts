@@ -65,7 +65,7 @@ describe("marching", () => {
 
   it("estimates the days of a route close to what the march takes", () => {
     const s = fed("normal");
-    const plan = planRoute(col(s), "taiyuan")!;
+    const plan = planRoute(s, col(s), "taiyuan")!;
     expect(plan.sites.at(-1)).toBe("taiyuan");
     orderMarch(s, 0, "taiyuan");
     let hours = 0;
@@ -81,7 +81,7 @@ describe("marching", () => {
     const done = col(s).leg!.done;
     days(s, 1);
     expect(col(s).leg!.done).toBe(done);
-    expect(planRoute(col(s), "datong")!.turnBack).toBe(true);
+    expect(planRoute(s, col(s), "datong")!.turnBack).toBe(true);
     orderMarch(s, 0, "datong");
     days(s, 1);
     expect(col(s).at).toBe("datong");
@@ -160,10 +160,12 @@ describe("sieges", () => {
     expect(siegeDays(col(s), s.cities.taiyuan)).toBeLessThanOrEqual(40);
   });
 
-  it("a stronger town yields engineers", () => {
+  it("a walled city takes longer and yields engineers", () => {
     const s = at("xinzhou");
     orderSiege(s, 0);
-    days(s, 7);
+    days(s, 6);
+    expect(s.cities.xinzhou.taken).toBe(false);
+    days(s, 3);
     expect(s.cities.xinzhou.taken).toBe(true);
     expect(col(s).engineers).toBe(true);
   });
@@ -197,6 +199,39 @@ describe("sieges", () => {
     orderMarch(s, 0, "yuci");
     expect(col(s).siege).toBeNull();
     expect(s.cities.taiyuan.progress).toBe(progress);
+  });
+});
+
+describe("fortresses", () => {
+  it("a fortress that holds closes its pass: the route goes around it", () => {
+    const s = newGame();
+    const plan = planRoute(s, col(s), "daizhou")!;
+    expect(plan.sites).not.toContain("yanmen");
+    s.cities.yanmen.taken = true;
+    expect(planRoute(s, col(s), "daizhou")!.sites).toContain("yanmen");
+  });
+
+  it("can be besieged, but a column at its gate can only go back the way it came", () => {
+    const s = fed("normal");
+    orderMarch(s, 0, "yanmen");
+    days(s, 6);
+    expect(col(s).at).toBe("yanmen");
+    expect(planRoute(s, col(s), "daizhou")!.sites[0]).toBe("yingzhou");
+  });
+
+  it("falls in about a week; a siege wins part of the garrison, a storm does not", () => {
+    const s = fed("normal", 0, "yanmen");
+    orderSiege(s, 0);
+    days(s, 6);
+    expect(s.cities.yanmen.taken).toBe(false);
+    days(s, 3);
+    expect(s.cities.yanmen.taken).toBe(true);
+    expect(col(s).men).toBe(3200);
+    const t = fed("normal", 0, "yanmen");
+    orderSiege(t, 0);
+    orderStorm(t, 0);
+    expect(t.cities.yanmen.taken).toBe(true);
+    expect(col(t).men).toBe(3000 - stormCost({ ...t.cities.yanmen, progress: 0 }));
   });
 });
 

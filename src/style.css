@@ -26,7 +26,13 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 .region { cursor: pointer; mix-blend-mode: multiply; }
 .region:hover { fill-opacity: .62 !important; }
 .fixed-stroke, .fixed-stroke *, .border, .sel { vector-effect: non-scaling-stroke; }
-.border { fill: none; stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 1 3.2; stroke-linecap: round; pointer-events: none; }
+.border { fill: none; stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 1 3.2; stroke-linecap: round; stroke-opacity: .55; pointer-events: none; }
+/* Jin strongholds: red while they hold, Mongol blue once taken */
+.target .tg { fill: var(--paper); stroke: var(--pol-jin); stroke-width: 1.6; stroke-linejoin: round; }
+.target .tg-fill { fill: var(--pol-jin); }
+.target.taken .tg { stroke: var(--pol-mongols); }
+.target.taken .tg-fill { fill: var(--pol-mongols); }
+.site:hover .tg, .site:focus .tg, .pass:hover .tg, .pass:focus .tg { stroke-width: 2.4; }
 .sel { fill: none; stroke: var(--label); stroke-width: 2.6; pointer-events: none; }
 .rname { font: 15px var(--f-map); font-size: calc(16px * var(--ls, 1)); fill: var(--label); letter-spacing: .14em; paint-order: stroke; stroke: var(--paper); stroke-width: calc(3px * var(--ls, 1)); stroke-opacity: .8; pointer-events: none; }
 .city { font: italic 12.5px var(--f-map-it); font-size: calc(14px * var(--ls, 1)); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: calc(2.6px * var(--ls, 1)); stroke-opacity: .85; pointer-events: none; }
@@ -101,6 +107,12 @@ dd { margin: 0; }
 .log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
 .log li.warning, .log li.alert { color: var(--bad); }
 
+/* map layers, bottom centre: one click or one key */
+.layers { left: 50%; bottom: 10px; transform: translateX(-50%); padding: 4px; gap: 2px; }
+.layers button { border-color: transparent; padding: 5px 10px; }
+.layers kbd { margin-left: 6px; font: 10.5px var(--f-body); opacity: .6; }
+@media (max-width: 1000px) { .layers kbd { display: none; } }
+
 /* zoom, bottom right */
 .zoom { position: absolute; right: 10px; bottom: 10px; display: grid; gap: 6px; z-index: 5; }
 .zoom button { background: var(--hud); }
@@ -135,6 +147,10 @@ dd { margin: 0; }
   /* one panel at a time at the bottom: an open place card or menu hides the column panel */
   .stage.side-open .column { display: none; }
   .zoom { top: 70px; bottom: auto; right: 8px; }
+  /* layers sit under the top bar, left of the zoom buttons; notices move below them */
+  .layers { left: 8px; right: 52px; top: 62px; bottom: auto; transform: none; overflow-x: auto; }
+  .layers button { padding: 5px 7px; font-size: 12px; flex: 1; }
+  .toasts { top: 110px; }
   .zoom button { min-width: 30px; height: 30px; }
 }
 
