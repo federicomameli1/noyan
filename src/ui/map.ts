@@ -278,7 +278,7 @@ export function createMap(opts: MapOptions): GameMap {
   // labels: collected here and then arranged by layoutLabels() to avoid overlaps
   type Candidate = [number, number, string];
   interface Box { x: number; y: number; width: number; height: number }
-  const toPlace: { el: SVGTextElement; ax: number; ay: number; pri: number; cands: Candidate[] }[] = [];
+  const toPlace: { el: SVGTextElement; ax: number; ay: number; pri: number; cands: Candidate[]; choice?: Candidate }[] = [];
   const obstacles: Box[] = [];
   const RING: Candidate[] = [[10, 4, "start"], [-10, 4, "end"], [0, -9, "middle"], [0, 16, "middle"], [8, -7, "start"], [-8, -7, "end"], [8, 15, "start"], [-8, 15, "end"]];
   const PASS_LABEL: Record<string, Candidate> = {
@@ -404,29 +404,46 @@ export function createMap(opts: MapOptions): GameMap {
     toPlace.push({ el: t, ax: cx, ay: cy, pri: 2, cands });
   });
 
+  /**
+   * Chooses where each label goes, once, for the most zoomed-out view, where labels are biggest
+   * compared with the map. Zooming in only shrinks them around their anchors, so the same choice
+   * still has no overlaps and labels do not jump from one side to the other while zooming.
+   */
   function layoutLabels() {
     const placed = obstacles.map(b => ({ ...b }));
     const pad = 2;
     const hit = (a: Box, b: Box) => !(a.x + a.width + pad < b.x || b.x + b.width + pad < a.x || a.y + a.height + pad < b.y || b.y + b.height + pad < a.y);
     const area = (a: Box, b: Box) =>
       Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-    const ls = labelScale();
+    const ls = maxW() / (stage.clientWidth || W);
+    svg.style.setProperty("--ls", String(ls));
     [...toPlace].sort((a, b) => a.pri - b.pri).forEach(L => {
-      let best: [number, number, string, Box] | null = null, bestCost = Infinity;
-      for (const [cx, cy, anc] of L.cands) {
-        const dx = cx * ls, dy = cy * ls;
-        L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
+      let best: [Candidate, Box] | null = null, bestCost = Infinity;
+      for (const cand of L.cands) {
+        const [cx, cy, anc] = cand;
+        L.el.setAttribute("x", String(L.ax + cx * ls)); L.el.setAttribute("y", String(L.ay + cy * ls)); L.el.setAttribute("text-anchor", anc);
         const b = L.el.getBBox();
         const outside = b.x < 4 || b.y < 4 || b.x + b.width > W - 4 || b.y + b.height > H - 4 ? 1e6 : 0;
         const cost = outside + placed.reduce((s, o) => s + (hit(b, o) ? 1000 + area(b, o) : 0), 0);
-        if (cost < bestCost) { bestCost = cost; best = [dx, dy, anc, { x: b.x, y: b.y, width: b.width, height: b.height }]; }
+        if (cost < bestCost) { bestCost = cost; best = [cand, { x: b.x, y: b.y, width: b.width, height: b.height }]; }
         if (cost === 0) break;
       }
       if (!best) return;
-      const [dx, dy, anc, box] = best;
-      L.el.setAttribute("x", String(L.ax + dx)); L.el.setAttribute("y", String(L.ay + dy)); L.el.setAttribute("text-anchor", anc);
-      placed.push(box);
+      L.choice = best[0];
+      placed.push(best[1]);
     });
+    svg.style.setProperty("--ls", String(labelScale()));
+    placeLabels();
+  }
+  /** puts each label at its chosen place for the current zoom */
+  function placeLabels() {
+    // symbols stop shrinking at 0.4 (see setVB): beyond that the gap from them stops shrinking too
+    const ls = Math.max(0.4, labelScale());
+    for (const L of toPlace) {
+      if (!L.choice) continue;
+      const [cx, cy, anc] = L.choice;
+      L.el.setAttribute("x", String(L.ax + cx * ls)); L.el.setAttribute("y", String(L.ay + cy * ls)); L.el.setAttribute("text-anchor", anc);
+    }
   }
 
   // compass rose and scale bar, inside the map
@@ -500,8 +517,7 @@ export function createMap(opts: MapOptions): GameMap {
     for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${k}) translate(${-x},${-y})`);
     for (const [g, x, y] of markers) g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
     drawColumn();
-    clearTimeout(relayout);
-    relayout = window.setTimeout(layoutLabels, 150);
+    placeLabels();
   };
   function clampVB() {
     vb.w = Math.min(maxW(), Math.max(W / 8, vb.w)); vb.h = vb.w * aspect;
@@ -541,6 +557,9 @@ export function createMap(opts: MapOptions): GameMap {
     clampVB();
     vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
     clampVB(); setVB();
+    // the most zoomed-out view depends on the shape of the stage: choose the label places again
+    clearTimeout(relayout);
+    relayout = window.setTimeout(layoutLabels, 150);
   }).observe(stage);
 
   paint();
