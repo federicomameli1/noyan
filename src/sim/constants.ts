@@ -114,17 +114,26 @@ export interface CityTypeRules {
   recruits: number;
   /** while it holds, no column can march through it */
   blocks: boolean;
+  /** its garrison sallies out against a column that marches past without leaving a blockade */
+  sorties: boolean;
 }
 
 /** Three kinds of Jin strongholds, each with its own difficulty and reward. */
 export const CITY_TYPES: Record<CityType, CityTypeRules> = {
   // county seat with earthen walls: falls fast, a supply stop
-  town: { walls: 1, grainDays: 10, engineers: false, recruits: 0, blocks: false },
+  town: { walls: 1, grainDays: 10, engineers: false, recruits: 0, blocks: false, sorties: false },
   // prefecture seat with brick walls: slow, but its workshops give engineers
-  walled: { walls: 2, grainDays: 10, engineers: true, recruits: 0, blocks: false },
+  walled: { walls: 2, grainDays: 10, engineers: true, recruits: 0, blocks: false, sorties: true },
   // fort holding a mountain pass: small garrison behind strong walls, it closes the road
-  fortress: { walls: 5, grainDays: 0, engineers: false, recruits: 0.4, blocks: true },
+  fortress: { walls: 5, grainDays: 0, engineers: false, recruits: 0.4, blocks: true, sorties: false },
 };
+
+/** a sortie kills this share of the garrison's number in the column's men [S] */
+export const SORTIE_MEN = 0.05;
+/** and takes this share of the column's flock [S] */
+export const SORTIE_SHEEP = 0.2;
+/** men a blockade needs, as a share of the garrison it keeps inside the walls [S] */
+export const BLOCKADE_MEN = 0.2;
 
 // --- Jin armies (layer 1) ---
 /** hours a day a Jin army marches, starting with the Mongol columns [S] */
