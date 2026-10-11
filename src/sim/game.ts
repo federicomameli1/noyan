@@ -4,7 +4,7 @@
 
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
-import { luck, randomStep, resolveBattle, type BattleResult, type JinForce, type MongolForce } from "./battle";
+import { luck, randomStep, resolveBattle, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
 import { armyAt, cityFalls, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
@@ -121,8 +121,17 @@ export interface GameState {
   rng: number;
   /** the last battle fought, for the report */
   lastBattle: LastBattle | null;
+  /** a Jin army has caught up with a column: the player chooses to fight or to ride away */
+  threat: Threat | null;
   over: boolean;
   result: "victory" | "defeat" | null;
+}
+
+/** A Jin army upon a column, waiting for the player's answer. Indexes into `columns` and `jin`. */
+export interface Threat {
+  column: number;
+  army: number;
+  hour: number;
 }
 
 /** A battle as it was fought: who attacked whom, where, and what came of it. */
@@ -132,6 +141,10 @@ export interface LastBattle {
   column: string;
   army: string;
   attacker: "mongol" | "jin";
+  /** the numbers of each side when battle was joined */
+  mongolMen: number;
+  jinFoot: number;
+  jinHorse: number;
   result: BattleResult;
 }
 
@@ -161,7 +174,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
@@ -483,6 +496,21 @@ export function canAttack(s: GameState, ci: number): JinArmy | null {
     ?? null;
 }
 
+/** The battle between a column and a Jin army, fought where the army stands, before luck. */
+export function battleInput(s: GameState, c: Column, a: JinArmy): BattleInput {
+  return { mongol: columnForce(c), jin: armyForce(s, a), ground: battleGround(graph.site(a.at ?? campSite(c).id)) };
+}
+
+/** How a battle would go: on an average day, on the best day for the Mongols and on the worst. */
+export function battleOdds(input: BattleInput): { even: BattleResult; best: BattleResult; worst: BattleResult } {
+  const hi = R.LUCK_MIN + R.LUCK_SPAN, lo = R.LUCK_MIN;
+  return {
+    even: resolveBattle({ ...input, luck: { mongol: 1, jin: 1 } }),
+    best: resolveBattle({ ...input, luck: { mongol: hi, jin: lo } }),
+    worst: resolveBattle({ ...input, luck: { mongol: lo, jin: hi } }),
+  };
+}
+
 /** Attacks the Jin army that stands with the column or bars its road. False if there is none. */
 export function orderAttack(s: GameState, ci: number): boolean {
   const a = canAttack(s, ci);
@@ -497,12 +525,8 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   const site = graph.site(a.at!);
   const mongolLuck = luck(() => random(s)); // the Mongols throw first
   const jinLuck = luck(() => random(s));
-  const r = resolveBattle({
-    mongol: columnForce(c),
-    jin: armyForce(s, a),
-    ground: battleGround(site),
-    luck: { mongol: mongolLuck, jin: jinLuck },
-  });
+  const r = resolveBattle({ ...battleInput(s, c, a), luck: { mongol: mongolLuck, jin: jinLuck } });
+  const before = { mongolMen: c.men, jinFoot: a.foot, jinHorse: a.horse };
   const menLost = Math.min(c.men, Math.round(r.mongolLosses.men));
   const horsesLost = Math.min(c.horses, Math.round(r.mongolLosses.horses));
   const footLost = Math.min(a.foot, Math.round(r.jinLosses.foot));
@@ -513,7 +537,7 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   a.horse -= horseLost;
   c.morale = clamp(c.morale + r.morale.mongol, 0, 100);
   a.morale = clamp(a.morale + r.morale.jin, 0, 100);
-  s.lastBattle = { hour: s.hour, site: site.id, column: c.name, army: a.name, attacker, result: r };
+  s.lastBattle = { hour: s.hour, site: site.id, column: c.name, army: a.name, attacker, ...before, result: r };
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
   const jinDone = r.outcome === "draw" || r.outcome === "victory" || r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
@@ -529,6 +553,65 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   log(s, `${who} at ${site.name}: ${r.outcome}. ${c.name} loses ${menLost.toLocaleString("en")} men and ${horsesLost.toLocaleString("en")} horses; `
     + `the Jin lose ${(footLost + horseLost).toLocaleString("en")} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
   checkEnd(s);
+}
+
+// --- a Jin army upon a column: fight, or ride away ---
+
+/** A neighbouring place the column can ride away to: not where the army came from, not closed, no Jin army there. */
+export function escapeSite(s: GameState, c: Column, a: JinArmy): string | null {
+  if (!c.at) return null;
+  const options = graph.neighbours(c.at).map(n => n.to).filter(id => id !== a.cameFrom && !isClosed(s, id) && !armyAt(s, id));
+  if (!options.length) return null;
+  // as far as possible from where the army came from
+  const from = a.cameFrom ? graph.site(a.cameFrom) : null;
+  const away = (id: string) => (from ? Math.hypot(graph.site(id).lon - from.lon, graph.site(id).lat - from.lat) : 0);
+  return options.reduce((best, id) => (away(id) > away(best) ? id : best));
+}
+
+/** Why the column cannot ride away from the army upon it, or null if it can. */
+export function refuseBlock(s: GameState): string | null {
+  const t = s.threat;
+  if (!t) return "There is no army to ride away from.";
+  const c = s.columns[t.column], a = s.jin[t.army];
+  if (c.condition <= R.REFUSE_MIN_CONDITION) return "The horses are too thin to outrun them.";
+  if (c.fatigue >= R.REFUSE_MAX_FATIGUE) return "The horses are too tired to outrun them.";
+  if (!escapeSite(s, c, a)) return "There is no road left to ride away by.";
+  return null;
+}
+
+/** Stands and fights the army upon the column. */
+export function orderFight(s: GameState): boolean {
+  const t = s.threat;
+  if (!t) return false;
+  s.threat = null;
+  const c = s.columns[t.column], a = s.jin[t.army];
+  if (c.men <= 0 || armyMen(a) <= 0 || a.at !== c.at) return false;
+  fight(s, t.column, a, "jin");
+  return true;
+}
+
+/**
+ * Rides away from the army upon the column, at a forced march, to the next place away from it.
+ * The siege is lifted and a flock is left behind, since sheep cannot outrun anyone.
+ */
+export function orderRefuse(s: GameState): boolean {
+  const t = s.threat;
+  if (!t || refuseBlock(s)) return false;
+  s.threat = null;
+  const c = s.columns[t.column], a = s.jin[t.army];
+  const site = c.at!, to = escapeSite(s, c, a)!;
+  if (c.siege) liftSiege(s, c);
+  const left = c.sheep > 0 ? ` The ${Math.round(c.sheep).toLocaleString("en")} sheep are left behind.` : "";
+  s.sites[site].sheep += c.sheep;
+  c.sheep = 0;
+  c.pace = "forced";
+  c.route = [to];
+  c.halted = false;
+  c.waiting = null;
+  // the army lost its chance: it decides again at midnight
+  a.order = "hold"; a.target = null; a.route = [];
+  log(s, `${c.name} rides away from the ${a.name} towards ${graph.site(to).name}, at a forced march.${left}`, "warning");
+  return true;
 }
 
 function checkEnd(s: GameState) {

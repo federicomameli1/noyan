@@ -221,3 +221,7 @@ export const BATTLE_SEED = 1218;
 export const JIN_ATTACK_RATIO = 1.3;
 /** a Jin army whose morale falls below this has had enough: it goes home [S] */
 export const JIN_RETREAT_MORALE = 30;
+/** a column can ride away from a Jin army only on horses in better condition than this [S] */
+export const REFUSE_MIN_CONDITION = 40;
+/** and less tired than this [S] */
+export const REFUSE_MAX_FATIGUE = 60;

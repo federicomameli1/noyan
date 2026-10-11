@@ -7,7 +7,7 @@
 import * as R from "./constants";
 import { strength } from "./battle";
 import { distanceKm, findPath, type Site } from "./graph";
-import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, fight, log, type Column, type GameState, type Leg } from "./game";
+import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg } from "./game";
 import { SCENARIO, type JinArmySpec } from "./scenario";
 
 const graph = SCENARIO.graph;
@@ -176,12 +176,19 @@ function canEnter(s: GameState, a: JinArmy, next: string, last: boolean): boolea
 
 /** Moves the armies one hour, then updates what the scouts see. Called by `step` after the columns. */
 export function stepJin(s: GameState, hourOfDay: number) {
-  // an army sent against a column fights as soon as it stands with it
-  for (const a of s.jin) {
-    if (a.order !== "attack" || !a.at || armyMen(a) <= 0) continue;
-    const ci = s.columns.findIndex(c => c.at === a.at && c.men > 0);
-    if (ci >= 0) fight(s, ci, a, "jin");
-    if (s.over) return;
+  // the player let time run without answering an army upon a column: the column stands and fights
+  if (s.threat && s.threat.hour < s.hour) orderFight(s);
+  if (s.over) return;
+  // an army sent against a column catches up with it: the player chooses to fight or to ride away
+  if (!s.threat) {
+    for (const [ai, a] of s.jin.entries()) {
+      if (a.order !== "attack" || !a.at || armyMen(a) <= 0) continue;
+      const ci = s.columns.findIndex(c => c.at === a.at && c.men > 0);
+      if (ci < 0) continue;
+      s.threat = { column: ci, army: ai, hour: s.hour };
+      log(s, `The ${a.name} is upon ${s.columns[ci].name} at ${graph.site(a.at).name}. Stand and fight, or ride away.`, "alert");
+      break;
+    }
   }
   const marching = hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + R.JIN_MARCH_HOURS;
   if (marching) {

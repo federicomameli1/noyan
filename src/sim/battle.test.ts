@@ -118,7 +118,10 @@ describe("factors", () => {
   it("puts the ground first in a pass", () => {
     const r = resolveBattle(battle({ ground: "pass" }));
     expect(r.factors.length).toBeLessThanOrEqual(4);
-    expect(r.factors[0]).toEqual({ factor: "ground", mongol: 0.7, jin: 1.4 });
+    // the Jin side is mostly foot: 6,500 x 0.4 x 1.4 and 1,500 x 0.7 x 0.7, over what they are worth on even ground
+    expect(r.factors[0].factor).toBe("ground");
+    expect(r.factors[0].mongol).toBe(0.7);
+    expect(r.factors[0].jin).toBeCloseTo(4375 / 3650, 6);
   });
 
   it("leaves out the factors that weighed on neither side", () => {

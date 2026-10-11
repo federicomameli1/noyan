@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { luck, mulberry32, resolveBattle } from "./battle";
 import { BATTLE_SEED, MONGOL_MORALE } from "./constants";
-import { canAttack, columnForce, armyForce, fight, newGame, orderAttack, orderSiege, step, type GameState } from "./game";
+import { armyForce, battleInput, battleOdds, canAttack, columnForce, escapeSite, fight, newGame, orderAttack, orderFight, orderRefuse, orderSiege, refuseBlock, step, type GameState } from "./game";
 import { jinDecide } from "./jin";
 import { makeSave, readSave } from "./save";
 
@@ -118,5 +118,76 @@ describe("saves", () => {
     expect(loaded.columns[0].morale).toBe(col(s).morale);
     expect(loaded.rng).toBe(s.rng);
     expect(loaded).toEqual(s);
+  });
+});
+
+describe("a Jin army catches up with a column", () => {
+  /** The frontier horsemen are upon a small detachment at Yuanping. */
+  function caught(): GameState {
+    const s = weakColumn(500);
+    for (let i = 0; i < 24 * 3 && !s.threat; i++) step(s);
+    return s;
+  }
+
+  it("stops the game and waits for the player's answer", () => {
+    const s = caught();
+    expect(s.threat).toMatchObject({ column: 1, army: 1 });
+    expect(s.lastBattle).toBeNull();
+    expect(s.log.at(-1)!.text).toContain("Stand and fight, or ride away");
+    expect(s.log.at(-1)!.kind).toBe("alert");
+  });
+
+  it("the column can stand and fight", () => {
+    const s = caught();
+    expect(orderFight(s)).toBe(true);
+    expect(s.threat).toBeNull();
+    expect(s.lastBattle?.attacker).toBe("jin");
+  });
+
+  it("if time runs on without an answer, the column fights", () => {
+    const s = caught();
+    step(s);
+    expect(s.threat).toBeNull();
+    expect(s.lastBattle?.attacker).toBe("jin");
+  });
+
+  it("on good horses it can ride away, leaving its flock and its siege behind", () => {
+    const s = caught();
+    const c = small(s), site = c.at!;
+    c.sheep = 400;
+    expect(refuseBlock(s)).toBeNull();
+    const to = escapeSite(s, c, horse(s));
+    expect(orderRefuse(s)).toBe(true);
+    expect(s.threat).toBeNull();
+    expect(c.route).toEqual([to]);
+    expect(c.pace).toBe("forced");
+    expect(c.sheep).toBe(0);
+    expect(s.sites[site].sheep).toBe(400);
+    expect(s.lastBattle).toBeNull();
+    days(s, 1);
+    expect(c.at).not.toBe(site);
+    expect(c.leg?.to ?? c.at).toBe(to);
+  });
+
+  it("on thin or tired horses it cannot", () => {
+    const s = caught();
+    small(s).condition = 30;
+    expect(refuseBlock(s)).toContain("too thin");
+    expect(orderRefuse(s)).toBe(false);
+    small(s).condition = 60;
+    small(s).fatigue = 70;
+    expect(refuseBlock(s)).toContain("too tired");
+  });
+});
+
+describe("the odds of a battle", () => {
+  it("luck can only move the outcome as far as the best and the worst day", () => {
+    const s = faceToFace();
+    const { even, best, worst } = battleOdds(battleInput(s, col(s), army(s)));
+    expect(best.ratio).toBeGreaterThan(even.ratio);
+    expect(worst.ratio).toBeLessThan(even.ratio);
+    orderAttack(s, 0);
+    expect(s.lastBattle!.result.ratio).toBeGreaterThanOrEqual(worst.ratio);
+    expect(s.lastBattle!.result.ratio).toBeLessThanOrEqual(best.ratio);
   });
 });
