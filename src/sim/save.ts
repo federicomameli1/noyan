@@ -6,7 +6,7 @@ import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -45,10 +45,10 @@ export function readSave(data: unknown): SaveFile {
 
   const g = d.game;
   if (!isObject(g) || !isNumber(g.hour) || g.hour < 0 || !Array.isArray(g.columns) || !g.columns.length
-    || !Array.isArray(g.jin) || g.jin.length !== SCENARIO.jin.length || !isObject(g.sites) || !isObject(g.cities) || !Array.isArray(g.log) || !isNumber(g.arrived) || typeof g.over !== "boolean") fail("The save is damaged.");
+    || !Array.isArray(g.jin) || g.jin.length !== SCENARIO.jin.length || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities) || !Array.isArray(g.log) || !isNumber(g.arrived) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;
   for (const c of game.columns) {
-    if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition)
+    if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition) || !isNumber(c.morale)
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");
   }
   // every place of the map must be there, and nothing else: a save of an older map would break the routes
@@ -56,6 +56,9 @@ export function readSave(data: unknown): SaveFile {
   if (Object.keys(game.sites).sort().join() !== siteIds) fail("The save was made on a different map.");
   if (Object.keys(game.cities).sort().join() !== Object.keys(SCENARIO.cities).sort().join()) fail("The save was made on a different map.");
 
+  // saves made before a Jin army could catch a column
+  game.threat ??= null;
+  if (game.threat && (!isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
   const active = isNumber(d.active) && d.active >= 0 && d.active < game.columns.length ? Math.floor(d.active) : 0;
   return {
     format: SAVE_FORMAT, version: SAVE_VERSION, scenario: SCENARIO.name,

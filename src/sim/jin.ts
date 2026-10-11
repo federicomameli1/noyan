@@ -1,17 +1,19 @@
-// Jin armies in the field (layer 1): they march, relieve besieged cities and raid flocks left behind.
-// There are no battles yet: a field army bars the road through the place where it stands, and a
-// column stops in front of it. Horsemen keep away from columns instead. Their rules are simple on purpose, so the player can read what they will do.
+// Jin armies in the field (layer 1): they march, relieve besieged cities, raid flocks left behind
+// and fight. A field army bars the road through the place where it stands, and a column stops in
+// front of it. Any army that judges itself clearly stronger than a column within reach sets out to
+// attack it; horsemen pick on weak columns and keep away from strong ones.
 // What the Mongols know of them depends on distance: the closer the scouts, the more they see.
 
 import * as R from "./constants";
+import { strength } from "./battle";
 import { distanceKm, findPath, type Site } from "./graph";
-import { advance, columnPosition, conditionBand, dateOf, log, type GameState, type Leg } from "./game";
+import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg } from "./game";
 import { SCENARIO, type JinArmySpec } from "./scenario";
 
 const graph = SCENARIO.graph;
 
-/** hold: stays where it is · relieve: marches to a besieged city · raid: goes after a flock · return: back home · withdraw: away from a column */
-export type JinOrder = "hold" | "relieve" | "raid" | "return" | "withdraw";
+/** hold: stays where it is · relieve: marches to a besieged city · raid: goes after a flock · attack: sets out against a column · return: back home · withdraw: away from a column */
+export type JinOrder = "hold" | "relieve" | "raid" | "attack" | "return" | "withdraw";
 
 /** What the scouts saw of an army, the last time they saw it. Level: see `sightLevel`. */
 export interface Sighting {
@@ -122,6 +124,7 @@ export function describeOrder(v: Sighting): string {
     case "hold": return "holding its ground";
     case "relieve": return `marching to relieve ${to}`;
     case "raid": return `riding for the flock at ${to}`;
+    case "attack": return `marching to attack the column at ${to}`;
     case "return": return `going back to ${to}`;
     case "withdraw": return `falling back to ${to}`;
   }
@@ -165,14 +168,28 @@ function go(s: GameState, a: JinArmy, dest: string, order: JinOrder): boolean {
   return true;
 }
 
-/** Can the army march on into `next`? Not where a column stands, unless that is where a field army is going. */
+/** Can the army march on into `next`? Not where a column stands, unless that is where it is going to fight or to relieve. */
 function canEnter(s: GameState, a: JinArmy, next: string, last: boolean): boolean {
   if (!columnAt(s, next)) return true;
-  return last && a.kind === "field" && a.order === "relieve";
+  return last && (a.order === "attack" || (a.kind === "field" && a.order === "relieve"));
 }
 
 /** Moves the armies one hour, then updates what the scouts see. Called by `step` after the columns. */
 export function stepJin(s: GameState, hourOfDay: number) {
+  // the player let time run without answering an army upon a column: the column stands and fights
+  if (s.threat && s.threat.hour < s.hour) orderFight(s);
+  if (s.over) return;
+  // an army sent against a column catches up with it: the player chooses to fight or to ride away
+  if (!s.threat) {
+    for (const [ai, a] of s.jin.entries()) {
+      if (a.order !== "attack" || !a.at || armyMen(a) <= 0) continue;
+      const ci = s.columns.findIndex(c => c.at === a.at && c.men > 0);
+      if (ci < 0) continue;
+      s.threat = { column: ci, army: ai, hour: s.hour };
+      log(s, `The ${a.name} is upon ${s.columns[ci].name} at ${graph.site(a.at).name}. Stand and fight, or ride away.`, "alert");
+      break;
+    }
+  }
   const marching = hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + R.JIN_MARCH_HOURS;
   if (marching) {
     for (const a of s.jin) {
@@ -264,9 +281,39 @@ function knownFlocks(s: GameState, a: JinArmy): string[] {
 export function jinDecide(s: GameState) {
   for (const a of s.jin) {
     if (armyMen(a) <= 0) continue;
+    if (decideAttack(s, a)) continue;
     if (a.kind === "field") decideField(s, a, SCENARIO.jin.find(j => j.name === a.name)!);
     else decideRaiders(s, a);
   }
+}
+
+/** How strong the army judges itself against a column, fighting where the column camps: above 1 it thinks it wins. */
+export function attackEstimate(s: GameState, a: JinArmy, c: Column): number {
+  const st = strength({ mongol: columnForce(c), jin: armyForce(s, a), ground: battleGround(campSite(c)) });
+  return st.jin / st.mongol;
+}
+
+/**
+ * An army that judges itself clearly stronger than a column within reach sets out to attack it,
+ * the nearest by road if there are several. One that no longer does gives up and goes home.
+ * True if the army's day is decided. An army inside a city stays behind its walls.
+ */
+function decideAttack(s: GameState, a: JinArmy): boolean {
+  if (a.inCity) return false;
+  const [lon, lat] = armyPosition(a);
+  const targets = s.columns
+    .filter(c => c.men > 0 && distanceKm(lon, lat, ...columnPosition(c)) <= R.JIN_SIGHT_KM && attackEstimate(s, a, c) >= R.JIN_ATTACK_RATIO)
+    .map(c => campSite(c).id);
+  const to = nearestByRoad(s, a, targets);
+  if (to) { go(s, a, to, "attack"); return true; }
+  if (a.order === "attack") { goHome(s, a); return true; }
+  return false;
+}
+
+/** Sends the army back home, or to the nearest Jin town if home has fallen. Out of any city it was holding. */
+export function goHome(s: GameState, a: JinArmy) {
+  a.inCity = false;
+  go(s, a, home(s, a), "return");
 }
 
 function decideField(s: GameState, a: JinArmy, spec: JinArmySpec) {

@@ -1,10 +1,10 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  blockadeMen, canBesiege, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  battleGround, battleInput, battleOdds, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
-  type CityState, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
+  type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import * as saves from "./ui/saves";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type Layer } from "./ui/map";
@@ -31,6 +31,10 @@ let selectedDesc: string | undefined;
 let hovered: Site | null = null;
 /** the column the player gives orders to */
 let active = 0;
+/** the Attack button was pressed: the odds are shown before the battle */
+let attackPreview = false;
+/** the last battle the player has seen the report of */
+let reportedBattle: GameState["lastBattle"] = null;
 const col = () => game.columns[active];
 
 const map = createMap({
@@ -101,7 +105,8 @@ SPEEDS.forEach(v => {
   speeds.append(b);
 });
 function setPlaying(on: boolean) {
-  playing = on && started && !game.over;
+  // an army upon a column waits for an answer: time does not run until the player gives it
+  playing = on && started && !game.over && !game.threat;
   render();
 }
 $("play").onclick = () => setPlaying(!playing);
@@ -140,6 +145,8 @@ function loadGame(save: SaveFile) {
   forecasts.clear();
   savedDay = Math.floor(game.hour / 24);
   logSeen = game.log.length;
+  reportedBattle = game.lastBattle;
+  attackPreview = false;
   delete $("log").dataset.count;
   $("start").hidden = true;
   $("end").hidden = true;
@@ -302,6 +309,7 @@ function renderPlace() {
   const c = col();
   const plan = planRoute(game, c, s.id);
   const here = c.at === s.id;
+  const foe = canAttack(game, active);
   const food = foodDays(c);
   const city = game.cities[s.id];
   let route = "";
@@ -339,6 +347,7 @@ function renderPlace() {
     </dl>
     ${route}
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
+    ${started && foe?.at === s.id ? `<button class="primary" id="attack">Attack the ${foe.name}</button>` : ""}
     ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
     ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
   if (changed) {
@@ -346,6 +355,7 @@ function renderPlace() {
     info.querySelector<HTMLButtonElement>("#go")?.addEventListener("click", () => march(s.id));
     info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
     info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
+    info.querySelector<HTMLButtonElement>("#attack")?.addEventListener("click", () => { attackPreview = true; setPlaying(false); });
   }
 }
 
@@ -523,6 +533,7 @@ function render() {
   renderRoute();
   renderColumn();
   renderPlace();
+  renderBattle();
 }
 
 function renderColumns() {
@@ -565,6 +576,97 @@ function selectColumn(i: number) {
   if (i === active || !game.columns[i]) return;
   active = i;
   render();
+}
+
+// --- battles: the odds before, the choice when the Jin catch up, the report after ---
+const OUTCOME: Record<BattleResult["outcome"], string> = {
+  rout: "a rout of the Jin", victory: "a victory", draw: "an undecided fight", defeat: "a defeat", disaster: "a disaster",
+};
+const OUTCOME_TITLE: Record<BattleResult["outcome"], string> = {
+  rout: "The Jin are routed", victory: "Victory", draw: "Neither side gives way", defeat: "Defeat", disaster: "Disaster",
+};
+const GROUND_WORD: Record<Ground, string> = {
+  steppe: "on the open steppe", plain: "on the plain", desert: "in the desert", upland: "in the uplands", mountain: "in the mountains", pass: "in a pass",
+};
+const times = (v: number) => `×${v.toFixed(2)}`;
+/** The factors that weighed most, in words: what each multiplied the strength of each side by. */
+function factorList(r: BattleResult, ground: Ground) {
+  const line = (f: BattleResult["factors"][number]) => {
+    switch (f.factor) {
+      case "ground": return `Fought ${GROUND_WORD[ground]}: ours ${times(f.mongol)}, theirs ${times(f.jin)}`;
+      case "horses": return `Our horses: ${times(f.mongol)}`;
+      case "morale": return `Spirit of the men: ours ${times(f.mongol)}, theirs ${times(f.jin)}`;
+      case "surprise": return f.mongol > 1 ? `We take them by surprise: ${times(f.mongol)}` : `They take us by surprise: ${times(f.jin)} for them`;
+      case "walls": return `They fight from behind walls: ${times(f.jin)} for them`;
+      case "luck": return `Fortune of the day: ours ${times(f.mongol)}, theirs ${times(f.jin)}`;
+    }
+  };
+  return r.factors.length ? `<ul class="factors">${r.factors.map(f => `<li>${line(f)}</li>`).join("")}</ul>` : "";
+}
+/** What to expect: the outcome on an average day, and how far luck can move it. */
+function oddsHTML(c: Column, a: JinArmy) {
+  const input = battleInput(game, c, a);
+  const { even, best, worst } = battleOdds(input);
+  const up = best.outcome !== even.outcome ? `${OUTCOME[best.outcome]} if fortune is with us` : "";
+  const down = worst.outcome !== even.outcome ? `${OUTCOME[worst.outcome]} if it is against us` : "";
+  const range = up || down ? `Expect ${OUTCOME[even.outcome]}, or ${[up, down].filter(Boolean).join(", or ")}.` : `Expect ${OUTCOME[even.outcome]}, whatever the luck of the day.`;
+  return `<p>${range}</p>
+    <dl><dt>Strength</dt><dd>ours ${even.ratio.toFixed(2)} to their 1</dd>
+    <dt>We would lose</dt><dd>about ${fmt(even.mongolLosses.men)} men and ${fmt(even.mongolLosses.horses)} horses</dd>
+    <dt>They would lose</dt><dd>about ${fmt(even.jinLosses.foot + even.jinLosses.horse)} men</dd></dl>
+    ${factorList(even, input.ground)}`;
+}
+function showBattle(label: string, title: string, body: string, actions: string) {
+  $("battle-label").textContent = label;
+  $("battle-title").textContent = title;
+  setHTML($("battle-body"), body);
+  setHTML($("battle-actions"), actions);
+  $("battle").hidden = false;
+}
+function renderBattle() {
+  const t = game.threat;
+  const fresh = game.lastBattle && game.lastBattle !== reportedBattle ? game.lastBattle : null;
+  if (t && !game.over) {
+    const c = game.columns[t.column], a = game.jin[t.army];
+    const block = refuseBlock(game);
+    const to = block ? null : escapeSite(game, c, a);
+    const costs = [c.siege ? "lifting the siege" : "", c.sheep > 0 ? "leaving the sheep behind" : ""].filter(Boolean).join(", ");
+    showBattle(`${c.name} at ${graph.site(a.at!).name}`, `The ${a.name} is upon us`,
+      `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} have caught up with ${c.name}.</p>${oddsHTML(c, a)}`,
+      `<button class="primary big" id="b-fight">Stand and fight</button>
+      ${to ? `<button class="big" id="b-refuse">Ride away to ${graph.site(to).name} at a forced march${costs ? `, ${costs}` : ""}</button>` : `<p class="note">Riding away is not possible: ${block}</p>`}`);
+    $("b-fight").onclick = () => { orderFight(game); render(); };
+    const r = document.getElementById("b-refuse");
+    if (r) r.onclick = () => { orderRefuse(game); setPlaying(true); };
+    return;
+  }
+  if (fresh) {
+    const r = fresh.result;
+    const c = game.columns.find(x => x.name === fresh.column);
+    const site = graph.site(fresh.site);
+    const sign = (v: number) => (v >= 0 ? `+${v}` : `−${-v}`);
+    showBattle(`Battle of ${site.name}`, OUTCOME_TITLE[r.outcome],
+      `<p>${fresh.attacker === "mongol" ? `${fresh.column} attacked the ${fresh.army}` : `The ${fresh.army} attacked ${fresh.column}`}: ${OUTCOME[r.outcome]}, strength ${r.ratio.toFixed(2)} to 1.</p>
+      <dl><dt>Engaged</dt><dd>${fmt(fresh.mongolMen)} of ours against ${[fresh.jinFoot ? `${fmt(fresh.jinFoot)} foot` : "", fresh.jinHorse ? `${fmt(fresh.jinHorse)} horse` : ""].filter(Boolean).join(" and ")}</dd>
+      <dt>We lost</dt><dd>${fmt(r.mongolLosses.men)} men and ${fmt(r.mongolLosses.horses)} horses${c ? `, ${fmt(c.men)} left` : ""}</dd>
+      <dt>They lost</dt><dd>${fmt(r.jinLosses.foot + r.jinLosses.horse)} men</dd>
+      <dt>Spirit</dt><dd>ours ${sign(r.morale.mongol)}, theirs ${sign(r.morale.jin)}</dd></dl>
+      ${r.factors.length ? `<p class="label">What decided it</p>${factorList(r, battleGround(site))}` : ""}`,
+      `<button class="primary big" id="b-ok">Go on</button>`);
+    $("b-ok").onclick = () => { reportedBattle = game.lastBattle; render(); };
+    return;
+  }
+  const foe = attackPreview ? canAttack(game, active) : null;
+  if (foe) {
+    const c = col();
+    showBattle(`${c.name} at ${graph.site(foe.at!).name}`, `Attack the ${foe.name}?`, oddsHTML(c, foe),
+      `<button class="primary big" id="b-attack">Attack</button><button class="big" id="b-cancel">Not now</button>`);
+    $("b-attack").onclick = () => { attackPreview = false; orderAttack(game, active); render(); };
+    $("b-cancel").onclick = () => { attackPreview = false; render(); };
+    return;
+  }
+  attackPreview = false;
+  $("battle").hidden = true;
 }
 
 // --- end of the game ---
