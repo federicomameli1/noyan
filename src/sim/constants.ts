@@ -225,3 +225,12 @@ export const JIN_RETREAT_MORALE = 30;
 export const REFUSE_MIN_CONDITION = 40;
 /** and less tired than this [S] */
 export const REFUSE_MAX_FATIGUE = 60;
+
+// --- sieges with enemies (layer 1) ---
+/** a garrison fighting outside its walls: quality and spirit [S] */
+export const GARRISON_QUALITY = 1;
+export const GARRISON_MORALE = 50;
+/** share of the garrison that sallies, when it judges itself JIN_ATTACK_RATIO times stronger than the besiegers [S] */
+export const SALLY_SHARE = 0.5;
+/** share of the garrison that comes out to help a relief army fight the besiegers [S] */
+export const RELIEF_GARRISON_SHARE = 0.25;

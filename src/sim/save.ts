@@ -58,7 +58,7 @@ export function readSave(data: unknown): SaveFile {
 
   // saves made before a Jin army could catch a column
   game.threat ??= null;
-  if (game.threat && (!isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
+  if (game.threat && ((game.threat.kind !== "attack" && game.threat.kind !== "relief") || !isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
   const active = isNumber(d.active) && d.active >= 0 && d.active < game.columns.length ? Math.floor(d.active) : 0;
   return {
     format: SAVE_FORMAT, version: SAVE_VERSION, scenario: SCENARIO.name,

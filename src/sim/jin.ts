@@ -185,7 +185,7 @@ export function stepJin(s: GameState, hourOfDay: number) {
       if (a.order !== "attack" || !a.at || armyMen(a) <= 0) continue;
       const ci = s.columns.findIndex(c => c.at === a.at && c.men > 0);
       if (ci < 0) continue;
-      s.threat = { column: ci, army: ai, hour: s.hour };
+      s.threat = { kind: "attack", column: ci, army: ai, hour: s.hour };
       log(s, `The ${a.name} is upon ${s.columns[ci].name} at ${graph.site(a.at).name}. Stand and fight, or ride away.`, "alert");
       break;
     }
@@ -207,11 +207,15 @@ function arrive(s: GameState, a: JinArmy, site: string) {
   if (a.order === "relieve" && site === a.target) {
     const city = s.cities[site];
     if (!city || city.taken) return;
-    a.inCity = true;
-    a.order = "hold";
-    city.stores += R.RELIEF_STORES;
-    const watched = s.columns.some(c => c.siege === site) || a.sight > 0;
-    if (watched) log(s, `A Jin army of ${fmt(armyMen(a))} men reaches ${graph.site(site).name}. While it holds the city the siege can make no headway: storm the walls, or march away.`, "alert");
+    // a column besieges the city: it must fight the relief army or lift the siege
+    const ci = s.columns.findIndex(c => c.siege === site && c.men > 0);
+    if (ci >= 0 && !s.threat) {
+      a.order = "hold";
+      s.threat = { kind: "relief", column: ci, army: s.jin.indexOf(a), hour: s.hour };
+      log(s, `The ${a.name} reaches ${graph.site(site).name}, and the garrison makes ready to sally. Fight them, or lift the siege.`, "alert");
+      return;
+    }
+    enterCity(s, a, site);
   } else if (a.order === "raid" && site === a.target) {
     const st = s.sites[site];
     if (st.sheep > 0 && !columnAt(s, site)) {
@@ -308,6 +312,19 @@ function decideAttack(s: GameState, a: JinArmy): boolean {
   if (to) { go(s, a, to, "attack"); return true; }
   if (a.order === "attack") { goHome(s, a); return true; }
   return false;
+}
+
+/** The army goes into a city it came to relieve, with food for it. While it holds the city the siege can make no headway. */
+export function enterCity(s: GameState, a: JinArmy, site: string) {
+  const city = s.cities[site];
+  if (!city || city.taken) return;
+  a.inCity = true;
+  a.order = "hold";
+  a.target = null;
+  a.route = [];
+  city.stores += R.RELIEF_STORES;
+  const watched = s.columns.some(c => c.siege === site) || a.sight > 0;
+  if (watched) log(s, `The ${a.name} enters ${graph.site(site).name} with ${fmt(armyMen(a))} men and food. While it holds the city the siege can make no headway: storm the walls, or march away.`, "alert");
 }
 
 /** Sends the army back home, or to the nearest Jin town if home has fallen. Out of any city it was holding. */
