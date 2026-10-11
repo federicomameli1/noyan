@@ -512,15 +512,16 @@ export interface Mover {
 
 /**
  * Moves along the route by `km` (on a road; slower links take more of it). Stops at a site when
- * `canEnter` refuses the next one. Calls `onArrive` at each site reached. Returns the km covered.
+ * `canEnter` refuses the next one. Calls `onArrive` at each site reached and `onLeave` at each site left. Returns the km covered.
  */
-export function advance(m: Mover, km: number, canEnter: (next: string, last: boolean) => boolean, onArrive: (site: string) => void): number {
+export function advance(m: Mover, km: number, canEnter: (next: string, last: boolean) => boolean, onArrive: (site: string) => void, onLeave?: (site: string) => void): number {
   let covered = 0;
   while (km > 0) {
     if (!m.leg) {
       const next = m.route[0];
       if (!next || !canEnter(next, m.route.length === 1)) break;
       m.route.shift();
+      onLeave?.(m.at!);
       m.leg = { from: m.at!, to: next, done: 0, km: linkBetween(graph, m.at!, next)!.km };
       m.at = null;
     }
@@ -561,7 +562,63 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
   c.fatigue = Math.min(100, c.fatigue + pace.fatiguePerHour * remountFactor(c));
   c.today.km += advance(c, pace.kmPerHour * speedFactor(c), (next, last) => last || !armyAt(s, next), site => {
     if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(site).name}.`, "arrival");
+  }, site => sortie(s, c, site));
+}
+
+// --- walled cities left behind ---
+
+/** True if a column (other than `except`) besieges this city: its garrison stays behind the walls. */
+export const isBlockaded = (s: GameState, id: string, except?: Column) => s.columns.some(c => c !== except && c.siege === id && c.men > 0);
+
+/**
+ * What a sortie from this city would cost a column marching away from it, or null if none would come.
+ * The column's own siege does not count: marching away lifts it.
+ */
+export function sortieCost(s: GameState, c: Column, id: string): { men: number; sheep: number } | null {
+  const city = s.cities[id];
+  if (!city || city.taken || !R.CITY_TYPES[city.type].sorties || isBlockaded(s, id, c)) return null;
+  return { men: Math.min(c.men, Math.round(city.garrison * R.SORTIE_MEN)), sheep: Math.round(c.sheep * R.SORTIE_SHEEP) };
+}
+
+/** A column marches away from a walled city that nobody blockades: the garrison falls on its rear. */
+function sortie(s: GameState, c: Column, id: string) {
+  const cost = sortieCost(s, c, id);
+  if (!cost) return;
+  c.men -= cost.men;
+  c.sheep -= cost.sheep;
+  const sheep = cost.sheep > 0 ? ` and drives off ${cost.sheep.toLocaleString("en")} sheep` : "";
+  log(s, `The garrison of ${graph.site(id).name} sallies out behind ${c.name}: it kills ${cost.men.toLocaleString("en")} men${sheep}.`, "warning");
+}
+
+/** Men a blockade of the city where the column stands would take, or null if it cannot leave one there. */
+export function blockadeMen(s: GameState, c: Column): number | null {
+  const city = c.at ? s.cities[c.at] : undefined;
+  if (!city || city.taken || !R.CITY_TYPES[city.type].sorties || c.siege || isBlockaded(s, c.at!)) return null;
+  const men = Math.ceil((city.garrison * R.BLOCKADE_MEN) / 100) * 100;
+  return c.men - men >= R.DEFEAT_MEN ? men : null;
+}
+
+/**
+ * Leaves part of the column in front of the city as a new column that besieges it, so the garrison
+ * stays inside when the rest marches on. It takes its share of horses and rations, but no sheep.
+ */
+export function leaveBlockade(s: GameState, ci: number): boolean {
+  const c = s.columns[ci];
+  const men = blockadeMen(s, c);
+  if (men === null) return false;
+  const share = men / c.men, name = graph.site(c.at!).name;
+  const b: Column = JSON.parse(JSON.stringify(c));
+  Object.assign(b, {
+    name: `${name} watch`, men, horses: Math.round(c.horses * share), rations: c.rations * share, sheep: 0,
+    route: [], halted: false, waiting: null, siege: c.at, engineers: false, grain: c.grain,
   });
+  b.reported.foodDays = foodDays(b);
+  c.men -= men;
+  c.horses -= b.horses;
+  c.rations -= b.rations;
+  s.columns.push(b);
+  log(s, `${c.name} leaves ${men.toLocaleString("en")} men to blockade ${name}.`);
+  return true;
 }
 
 function endOfDay(s: GameState) {

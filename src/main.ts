@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  canBesiege, foodDays, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  blockadeMen, canBesiege, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type CityState, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -227,7 +227,7 @@ const KIND = { city: "Town", pass: "Mountain pass", junction: "Crossroads", past
 const TYPE_NAME = { town: "Jin town", walled: "Jin walled city", fortress: "Jin fortress" };
 const TYPE_NOTE = {
   town: "Earthen walls and a small garrison: it falls fast. Its granaries feed men and horses.",
-  walled: "Brick walls: a long siege. Its workshops give engineers, who halve the time of later sieges.",
+  walled: "Brick walls: a long siege. Its workshops give engineers, who halve the time of later sieges. March past it and the garrison sallies out behind you, unless a blockade keeps it inside.",
   fortress: "Holds the pass: no column can march through until it falls. Starved out, part of the garrison joins you; stormed, none do.",
 };
 /** what taking a city would give now, in words */
@@ -318,7 +318,7 @@ function renderPlace() {
     const time = f?.arrival ?? plan.days;
     const short = food < time;
     const ahead = f ? `<br>${f.arrival === null ? `After ${Math.round(f.end.day)} days, still on the way` : "On arrival"}: ${arrivalText(f)}.` : "";
-    route = `<div class="route">${fmt(plan.km)} km, ${days(time)} at the ${effectivePace(c)} pace.${short ? ` <b class="t-bad">Food lasts ${Math.floor(food)} days.</b>` : ""}${ahead}</div>`;
+    route = `<div class="route">${fmt(plan.km)} km, ${days(time)} at the ${effectivePace(c)} pace.${short ? ` <b class="t-bad">Food lasts ${Math.floor(food)} days.</b>` : ""}${ahead}${sortiesText(c, plan.sites)}</div>`;
   } else route = `<div class="route">No open road: a Jin fortress or army holds the way.</div>`;
   const changed = setHTML(info, `<button class="close icon" aria-label="Close">✕</button>
     <span class="label">${city ? (city.taken ? `${TYPE_NAME[city.type]}, taken` : TYPE_NAME[city.type]) : KIND[s.kind]}</span><h2>${s.name}</h2>
@@ -347,6 +347,13 @@ function renderPlace() {
     info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
     info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
   }
+}
+
+/** the walled cities a route leaves behind, and what their sorties would cost */
+function sortiesText(c: Column, sites: string[]) {
+  const left = [...(c.at ? [c.at] : []), ...sites.slice(0, -1)];
+  const hits = left.map(id => [id, sortieCost(game, c, id)] as const).filter(([, cost]) => cost);
+  return hits.map(([id, cost]) => `<br><b class="t-warn">${graph.site(id).name} will sally out behind you: about ${fmt(cost!.men)} men${cost!.sheep ? ` and ${fmt(cost!.sheep)} sheep` : ""}. Leave a blockade there to stop it.</b>`).join("");
 }
 
 /** grass in words, with the number for those who want it */
@@ -402,6 +409,7 @@ function renderColumn() {
   const perMan = c.horses / Math.max(1, c.men);
   const density = pastureDensity(camp, dateOf(game).month, game.sites[camp.id]);
   const flockHere = c.at ? game.sites[c.at].sheep : 0;
+  const blockade = blockadeMen(game, c);
   const changed = setHTML($("column"), `<button class="fold icon" aria-label="${folded ? "Show details" : "Hide details"}" aria-expanded="${!folded}">${folded ? "▴" : "▾"}</button>
     ${game.columns.length > 1 ? `<div class="seg tabs" role="group" aria-label="Column">${game.columns.map((x, i) => `<button data-col="${i}" aria-pressed="${i === active}">${x.name}</button>`).join("")}</div>` : ""}
     <h2>${c.name}</h2>
@@ -427,6 +435,7 @@ function renderColumn() {
       </div>
       <div class="seg">
         ${canBesiege(game, c) ? `<button id="siege" class="primary">Lay siege</button>` : ""}
+        ${blockade !== null ? `<button id="blockade" title="Leave ${fmt(blockade)} men to besiege the city, so its garrison cannot sally out when the rest marches on">Blockade, −${fmt(blockade)} men</button>` : ""}
         ${besieged ? `<button id="storm" ${stormFails(c, besieged) ? "disabled title=\"Too few men to storm yet\"" : ""}>Storm, −${fmt(stormCost(besieged))} men</button>` : `<button id="halt" ${c.halted || (!c.leg && !c.route.length) ? "disabled" : ""}>Halt</button>`}
         ${c.sheep > 0 ? `<button id="drop" ${c.at ? "" : "disabled"}>Leave flock</button>` : ""}
         ${flockHere > 0 ? `<button id="take">Take ${fmt(flockHere)} sheep</button>` : ""}
@@ -443,6 +452,7 @@ function renderColumn() {
   panel.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
   panel.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
+  panel.querySelector<HTMLButtonElement>("#blockade")?.addEventListener("click", () => { leaveBlockade(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#drop")?.addEventListener("click", () => { dropFlock(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, active); render(); });
 }

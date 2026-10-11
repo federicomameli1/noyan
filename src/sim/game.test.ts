@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropFlock, effectivePace, forecast, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, step, stormCost, takeFlock, type GameState } from "./game";
+import { blockadeMen, dropFlock, effectivePace, forecast, leaveBlockade, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, sortieCost, step, stormCost, takeFlock, type GameState } from "./game";
 import { RATIONS_PER_SHEEP, type PaceId } from "./constants";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
@@ -233,6 +233,71 @@ describe("fortresses", () => {
     orderStorm(t, 0);
     expect(t.cities.yanmen.taken).toBe(true);
     expect(col(t).men).toBe(3000 - stormCost({ ...t.cities.yanmen, progress: 0 }));
+  });
+});
+
+describe("walled cities left behind", () => {
+  /** a fed column at a site, with no Jin army in the field */
+  const alone = (at: string, sheep = 0) => {
+    const s = fed("normal", 0, at);
+    s.jin = [];
+    col(s).sheep = sheep;
+    return s;
+  };
+
+  it("a column marching past a walled city loses men and sheep to a sortie", () => {
+    const s = alone("yuanping", 1000);
+    orderMarch(s, 0, "shiling");
+    expect(planRoute(s, col(s), "shiling")!.sites).toContain("xinzhou");
+    for (let d = 0; d < 15 && col(s).at !== "shiling"; d++) days(s, 1);
+    expect(col(s).at).toBe("shiling");
+    expect(col(s).men).toBe(3000 - 75);
+    // a fifth of the flock is driven off, and the men eat no sheep while their rations last
+    expect(col(s).sheep).toBe(800);
+    expect(s.log.some(e => e.text.includes("sallies out"))).toBe(true);
+  });
+
+  it("marching away from a siege brings a sortie too, but stopping at the city does not", () => {
+    const s = alone("yuanping");
+    orderMarch(s, 0, "xinzhou");
+    days(s, 2);
+    expect(col(s).men).toBe(3000);
+    orderSiege(s, 0);
+    orderMarch(s, 0, "yuanping");
+    days(s, 2);
+    expect(col(s).men).toBe(3000 - 75);
+  });
+
+  it("towns do not sally out", () => {
+    const s = alone("yuanping");
+    expect(sortieCost(s, col(s), "yuanping")).toBeNull();
+    expect(blockadeMen(s, col(s))).toBeNull();
+  });
+
+  it("a blockade left at the city keeps the garrison inside and besieges it", () => {
+    const s = alone("xinzhou", 1000);
+    expect(blockadeMen(s, col(s))).toBe(300);
+    expect(leaveBlockade(s, 0)).toBe(true);
+    const [main, watch] = s.columns;
+    expect(main.men).toBe(2700);
+    expect(watch.men).toBe(300);
+    expect(main.horses + watch.horses).toBe(12000);
+    expect(watch.sheep).toBe(0);
+    expect(watch.siege).toBe("xinzhou");
+    // one blockade is enough
+    expect(blockadeMen(s, main)).toBeNull();
+    orderMarch(s, 0, "yuanping");
+    for (let d = 0; d < 15 && main.at !== "yuanping"; d++) days(s, 1);
+    expect(main.at).toBe("yuanping");
+    expect(main.men).toBe(2700);
+    expect(main.sheep).toBe(1000);
+    expect(s.cities.xinzhou.progress).toBeGreaterThan(0);
+  });
+
+  it("cannot leave a blockade that would bring the column under 1,000 men", () => {
+    const s = alone("taiyuan");
+    col(s).men = 2500;
+    expect(blockadeMen(s, col(s))).toBeNull();
   });
 });
 
