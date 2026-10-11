@@ -9,4 +9,5 @@ export * from "./scenario";
 export * from "./game";
 export * from "./jin";
 export * from "./battle";
+export * from "./country";
 export * from "./save";

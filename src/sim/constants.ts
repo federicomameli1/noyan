@@ -4,7 +4,7 @@
 // Tags: [D] documented, [R] modern estimate, [S] game estimate, to be tuned by playing.
 
 import type { ConditionBand } from "./game";
-import type { Terrain } from "./world";
+import type { Control, Terrain } from "./world";
 
 /** Real seconds per game day at 1x speed. */
 export const SECONDS_PER_DAY = 8;
@@ -234,3 +234,33 @@ export const GARRISON_MORALE = 50;
 export const SALLY_SHARE = 0.5;
 /** share of the garrison that comes out to help a relief army fight the besiegers [S] */
 export const RELIEF_GARRISON_SHARE = 0.25;
+
+// --- the countryside: requisition and plunder (layer 1) ---
+/** what the villages of a place hold after the harvest, for each level of population (0-3) [S] */
+export const COUNTRY_FOOD = 6000; // rations: two days for the starting column, per level
+export const COUNTRY_GRAIN = 12000; // horse-days of grain: a day for the starting herd, per level
+export const COUNTRY_LIVESTOCK = 300; // head, counted as sheep
+/** in winter the villagers eat their stores and hide the rest: share lost each month [S] */
+export const WINTER_LOSS = 0.15;
+export const WINTER_MONTHS: readonly number[] = [10, 11, 0, 1, 2]; // November to March
+/** requisition: a day, a quarter of the food and grain, a little anger [S] */
+export const REQUISITION_DAYS = 1;
+export const REQUISITION_SHARE = 0.25;
+export const REQUISITION_HOSTILITY = 5;
+/** plunder: two days, most of everything and the livestock, the fields burned, much anger [S] */
+export const PLUNDER_DAYS = 2;
+export const PLUNDER_SHARE = 0.8;
+export const PLUNDER_HOSTILITY = 25;
+/** hostility of the villagers at the start, by who holds the land [S] */
+export const HOSTILITY_START: Record<Control, number> = { mongols: 0, contested: 15, jin: 30, xixia: 0 };
+/** share of the anger that spreads to the places around [S] */
+export const HOSTILITY_SPILL = 0.5;
+/** points of hostility lost each day, down to where it started [S] */
+export const HOSTILITY_COOLING = 1;
+/** above this the villagers hide their food: requisition brings half [S] */
+export const HIDE_HOSTILITY = 50;
+/** above this they steal horses at night: share of the herd [S] */
+export const THEFT_HOSTILITY = 70;
+export const HORSE_THEFT = 0.002;
+/** share of the meat that can be eaten when a whole flock is slaughtered at once [S] */
+export const SLAUGHTER_SHARE = 0.5;

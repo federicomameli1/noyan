@@ -6,6 +6,7 @@ import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
+import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
@@ -43,6 +44,8 @@ export interface Column {
   /** a Jin army bars the road at this site: the column waits in front of it */
   waiting: string | null;
   today: { marchHours: number; km: number };
+  /** men out in the villages around, until the given hour */
+  foraging: { kind: ForageKind; until: number } | null;
   /** the city being besieged, if any */
   siege: string | null;
   /** engineers taken from a captured city: sieges go faster */
@@ -83,6 +86,14 @@ export interface SiteState {
   grazed: number;
   /** sheep left here by a column */
   sheep: number;
+  /** what the villages around still hold: rations, horse-days of grain, head of livestock */
+  food: number;
+  grain: number;
+  livestock: number;
+  /** plundered: the fields are burned until the next harvest */
+  burned: boolean;
+  /** 0-100, how much the villagers hate the Mongols */
+  hostility: number;
 }
 
 export interface CityState {
@@ -160,7 +171,7 @@ function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
     condition: c.condition, fatigue: 0, morale: R.MONGOL_MORALE, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, waiting: null,
-    today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
+    today: { marchHours: 0, km: 0 }, foraging: null, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
   return col;
@@ -170,7 +181,7 @@ export function newGame(sheep = 0): GameState {
   const c = SCENARIO.column;
   const col = newColumn(c, SCENARIO.base, sheep);
   const sites: Record<string, SiteState> = {};
-  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0 };
+  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
@@ -307,6 +318,7 @@ export function orderMarch(s: GameState, ci: number, dest: string): boolean {
   const plan = planRoute(s, c, dest);
   if (!plan) return false;
   if (c.siege && dest !== c.siege) liftSiege(s, c);
+  cancelForage(s, c);
   if (plan.turnBack) {
     const l = c.leg!;
     c.leg = { from: l.to, to: l.from, done: l.km - l.done, km: l.km };
@@ -744,7 +756,7 @@ export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
 export function step(s: GameState) {
   if (s.over) return;
   const hourOfDay = dateOf(s).hour;
-  for (const c of s.columns) stepColumn(s, c, hourOfDay);
+  for (const c of s.columns) { stepForage(s, c); stepColumn(s, c, hourOfDay); }
   stepJin(s, hourOfDay);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
@@ -877,6 +889,7 @@ export function leaveBlockade(s: GameState, ci: number): boolean {
 }
 
 function endOfDay(s: GameState) {
+  countryDay(s);
   const month = dateOf(s).month;
   const quality = R.PASTURE_QUALITY[month];
   for (const c of s.columns) {
