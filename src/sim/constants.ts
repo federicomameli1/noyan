@@ -1,7 +1,9 @@
-// Every tunable number of the layer 0 rules lives here.
-// Design notes and sources: brainstorming doc "03-regole-strato-0" in the project files.
+// Every tunable number of the rules lives here.
+// Design notes and sources: brainstorming docs "03-regole-strato-0" (layer 0) and
+// "07-regole-strato-1" (battles) in the project files.
 // Tags: [D] documented, [R] modern estimate, [S] game estimate, to be tuned by playing.
 
+import type { ConditionBand } from "./game";
 import type { Terrain } from "./world";
 
 /** Real seconds per game day at 1x speed. */
@@ -153,3 +155,63 @@ export const JIN_FLOCK_SIGHT_KM = 60;
 export const RELIEF_STORES = 20;
 /** size bands of a Jin army seen from far away, men: up to `small` is small, up to `medium` medium [S] */
 export const ARMY_SIZE = { small: 2000, medium: 6000 } as const;
+
+// --- battles (layer 1) ---
+// A Mongol column against a Jin army. Rules: design doc "07-regole-strato-1", section 4.
+/** fighting value of each troop type [S] */
+export const TROOP_VALUE = { mongolHorse: 1.0, jinHorse: 0.7, jinFoot: 0.4 };
+/** strength of the horses by the condition of the herd [S] */
+export const HORSE_STRENGTH: Record<ConditionBand, number> = { fat: 1.1, fit: 1, thin: 0.75, exhausted: 0.45 };
+/** fatigue above which the horses count as tired [S] */
+export const TIRED_HORSES_FATIGUE = 60;
+/** and the tired horses' extra penalty [S] */
+export const TIRED_HORSES_FACTOR = 0.8;
+
+/** where a battle is fought: any terrain of the map, or a pass along the way */
+export type Ground = Terrain | "pass";
+
+// the ground: horsemen want open land, footmen broken land. The desert is not in the
+// design doc: open like the steppe for horsemen, thirst and soft sand for footmen [S]
+export const GROUND_HORSE: Record<Ground, number> = { steppe: 1.2, plain: 1.2, desert: 1.2, upland: 1, mountain: 0.8, pass: 0.7 };
+export const GROUND_FOOT: Record<Ground, number> = { steppe: 1, plain: 1, desert: 0.9, upland: 1.1, mountain: 1.2, pass: 1.4 };
+
+/** strength is multiplied by MORALE_BASE + morale/100 [S] */
+export const MORALE_BASE = 0.5;
+/** morale of a Mongol column, when it is not given [S] */
+export const MONGOL_MORALE = 70;
+/** multiplier for the side that takes the other by surprise [S] */
+export const SURPRISE = 1.4;
+/** luck of the day, a factor drawn between these bounds [S] */
+export const LUCK_MIN = 0.9;
+export const LUCK_SPAN = 0.2;
+
+export type BattleOutcome = "rout" | "victory" | "draw" | "defeat" | "disaster";
+
+export interface OutcomeRule {
+  /** least ratio of Mongol to Jin strength that ends the battle this way */
+  min: number;
+  /** share of their men that each side loses [S] */
+  mongolLosses: number;
+  jinLosses: number;
+}
+
+/** what becomes of a battle, by the ratio of the strengths, best for the Mongols first [S] */
+export const OUTCOMES: readonly (OutcomeRule & { id: BattleOutcome })[] = [
+  { min: 2, id: "rout", mongolLosses: 0.03, jinLosses: 0.4 },
+  { min: 1.25, id: "victory", mongolLosses: 0.08, jinLosses: 0.25 },
+  { min: 0.8, id: "draw", mongolLosses: 0.12, jinLosses: 0.12 },
+  { min: 0.5, id: "defeat", mongolLosses: 0.25, jinLosses: 0.08 },
+  { min: 0, id: "disaster", mongolLosses: 0.45, jinLosses: 0.03 },
+];
+
+/** extra share of their men the Jin lose when the Mongols ride the fugitives down [S] */
+export const PURSUIT_LOSSES = 0.15;
+/** share of the losses the Mongols save by falling back in good order, with horses able to run [S] */
+export const RETREAT_RELIEF = 1 / 3;
+/** Mongol horses lost for every man [S] */
+export const HORSES_LOST_PER_MAN = 2;
+/** how morale moves after a battle [S] */
+export const MORALE_WIN = 10;
+export const MORALE_LOSS = -20;
+/** the loser's change after a rout or a disaster [S] */
+export const MORALE_ROUT = -35;
