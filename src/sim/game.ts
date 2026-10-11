@@ -4,8 +4,9 @@
 
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
+import { luck, randomStep, resolveBattle, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
-import { armyAt, cityFalls, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, type JinArmy } from "./jin";
+import { armyAt, cityFalls, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export interface Leg {
@@ -27,6 +28,8 @@ export interface Column {
   condition: number;
   /** 0-100, fast: tiredness recovered by resting */
   fatigue: number;
+  /** 0-100, the men's spirit: moved by battles, MONGOL_MORALE at the start */
+  morale: number;
   pace: R.PaceId;
   /** the site where the column stands, or null while it is on a link */
   at: string | null;
@@ -114,8 +117,22 @@ export interface GameState {
   log: LogEntry[];
   /** reinforcements from the scenario already arrived */
   arrived: number;
+  /** state of the battle dice: each battle draws its luck from it */
+  rng: number;
+  /** the last battle fought, for the report */
+  lastBattle: LastBattle | null;
   over: boolean;
   result: "victory" | "defeat" | null;
+}
+
+/** A battle as it was fought: who attacked whom, where, and what came of it. */
+export interface LastBattle {
+  hour: number;
+  site: string;
+  column: string;
+  army: string;
+  attacker: "mongol" | "jin";
+  result: BattleResult;
 }
 
 export type ConditionBand = "fat" | "fit" | "thin" | "exhausted";
@@ -127,7 +144,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
-    condition: c.condition, fatigue: 0, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, waiting: null,
+    condition: c.condition, fatigue: 0, morale: R.MONGOL_MORALE, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, waiting: null,
     today: { marchHours: 0, km: 0 }, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
@@ -144,7 +161,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
@@ -433,6 +450,85 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
     s.over = true;
     log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}.`, "arrival");
   }
+}
+
+// --- battles ---
+
+/** Draws the next number of the game's dice: battles take their luck from here. */
+export function random(s: GameState): number {
+  const d = randomStep(s.rng);
+  s.rng = d.state;
+  return d.value;
+}
+
+/** The column as a Mongol force: every man a horseman, worth what his horses are worth. */
+export const columnForce = (c: Column): MongolForce => ({ men: c.men, condition: c.condition, fatigue: c.fatigue, morale: c.morale });
+
+/** A Jin army as a fighting force: behind its walls when it stands in a city it relieved. */
+export function armyForce(s: GameState, a: JinArmy): JinForce {
+  const city = a.inCity && a.at ? s.cities[a.at] : undefined;
+  return { foot: a.foot, horse: a.horse, quality: a.quality, morale: a.morale, walls: city ? R.CITY_TYPES[city.type].walls : undefined };
+}
+
+/** Where a battle is fought: the pass itself, or the terrain around the place. */
+export const battleGround = (site: Site): R.Ground => (site.kind === "pass" ? "pass" : site.terrain);
+
+/** The Jin army this column can attack now: one standing with it, or barring its road. */
+export function canAttack(s: GameState, ci: number): JinArmy | null {
+  const c = s.columns[ci];
+  if (c.men <= 0) return null;
+  const hittable = (a: JinArmy) => armyMen(a) > 0 && a.sight >= 2 && a.at !== null;
+  return s.jin.find(a => hittable(a) && a.at === c.at)
+    ?? s.jin.find(a => hittable(a) && c.waiting !== null && a.at === c.waiting)
+    ?? null;
+}
+
+/** Attacks the Jin army that stands with the column or bars its road. False if there is none. */
+export function orderAttack(s: GameState, ci: number): boolean {
+  const a = canAttack(s, ci);
+  if (!a) return false;
+  fight(s, ci, a, "mongol");
+  return true;
+}
+
+/** Fights the battle between a column and the Jin army where that army stands, and applies what follows. */
+export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin") {
+  const c = s.columns[ci];
+  const site = graph.site(a.at!);
+  const mongolLuck = luck(() => random(s)); // the Mongols throw first
+  const jinLuck = luck(() => random(s));
+  const r = resolveBattle({
+    mongol: columnForce(c),
+    jin: armyForce(s, a),
+    ground: battleGround(site),
+    luck: { mongol: mongolLuck, jin: jinLuck },
+  });
+  const menLost = Math.min(c.men, Math.round(r.mongolLosses.men));
+  const horsesLost = Math.min(c.horses, Math.round(r.mongolLosses.horses));
+  const footLost = Math.min(a.foot, Math.round(r.jinLosses.foot));
+  const horseLost = Math.min(a.horse, Math.round(r.jinLosses.horse));
+  c.men -= menLost;
+  c.horses -= horsesLost;
+  a.foot -= footLost;
+  a.horse -= horseLost;
+  c.morale = clamp(c.morale + r.morale.mongol, 0, 100);
+  a.morale = clamp(a.morale + r.morale.jin, 0, 100);
+  s.lastBattle = { hour: s.hour, site: site.id, column: c.name, army: a.name, attacker, result: r };
+
+  // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
+  const jinDone = r.outcome === "draw" || r.outcome === "victory" || r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
+  if (jinDone) goHome(s, a);
+  else { a.order = "hold"; a.target = null; a.route = []; }
+  // a beaten column lifts its siege and stands where it is
+  if (r.outcome === "defeat" || r.outcome === "disaster") {
+    if (c.siege) liftSiege(s, c);
+    c.route = [];
+    c.halted = true;
+  }
+  const who = attacker === "mongol" ? `${c.name} attacks the ${a.name}` : `The ${a.name} attacks ${c.name}`;
+  log(s, `${who} at ${site.name}: ${r.outcome}. ${c.name} loses ${menLost.toLocaleString("en")} men and ${horsesLost.toLocaleString("en")} horses; `
+    + `the Jin lose ${(footLost + horseLost).toLocaleString("en")} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
+  checkEnd(s);
 }
 
 function checkEnd(s: GameState) {

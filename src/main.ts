@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  blockadeMen, canBesiege, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  blockadeMen, canAttack, canBesiege, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type CityState, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -302,6 +302,7 @@ function renderPlace() {
   const c = col();
   const plan = planRoute(game, c, s.id);
   const here = c.at === s.id;
+  const foe = canAttack(game, active);
   const food = foodDays(c);
   const city = game.cities[s.id];
   let route = "";
@@ -339,6 +340,7 @@ function renderPlace() {
     </dl>
     ${route}
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
+    ${started && foe?.at === s.id ? `<button class="primary" id="attack">Attack the ${foe.name}</button>` : ""}
     ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
     ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
   if (changed) {
@@ -346,6 +348,7 @@ function renderPlace() {
     info.querySelector<HTMLButtonElement>("#go")?.addEventListener("click", () => march(s.id));
     info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
     info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
+    info.querySelector<HTMLButtonElement>("#attack")?.addEventListener("click", () => { orderAttack(game, active); render(); });
   }
 }
 

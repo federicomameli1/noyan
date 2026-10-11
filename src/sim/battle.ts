@@ -138,17 +138,24 @@ export function resolveBattle(input: BattleInput): BattleResult {
   };
 }
 
+/** One throw of the dice: a number between 0 and 1, and the state for the next throw. Pure, so a game can keep the state in itself. */
+export function randomStep(state: number): { value: number; state: number } {
+  const a = (state + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return { value: ((t ^ (t >>> 14)) >>> 0) / 4294967296, state: a };
+}
+
 /**
- * Seeded random generator (mulberry32): each call returns the next number between 0 and 1.
- * The same seed gives the same sequence, so a battle can be replayed and told again.
+ * Seeded random generator (mulberry32) on that step: each call returns the next number between
+ * 0 and 1. The same seed gives the same sequence, so a battle can be replayed and told again.
  */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    const d = randomStep(a);
+    a = d.state;
+    return d.value;
   };
 }
 

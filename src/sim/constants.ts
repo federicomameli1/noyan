@@ -215,3 +215,9 @@ export const MORALE_WIN = 10;
 export const MORALE_LOSS = -20;
 /** the loser's change after a rout or a disaster [S] */
 export const MORALE_ROUT = -35;
+/** the campaign's first throw of the dice: every battle's luck is drawn from this seed [S] */
+export const BATTLE_SEED = 1218;
+/** a Jin army attacks when it judges itself at least this strong against a column [S] */
+export const JIN_ATTACK_RATIO = 1.3;
+/** a Jin army whose morale falls below this has had enough: it goes home [S] */
+export const JIN_RETREAT_MORALE = 30;
