@@ -4,9 +4,9 @@
 
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
-import { luck, randomStep, resolveBattle, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
+import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
-import { armyAt, cityFalls, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
+import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export interface Leg {
@@ -129,6 +129,8 @@ export interface GameState {
 
 /** A Jin army upon a column, waiting for the player's answer. Indexes into `columns` and `jin`. */
 export interface Threat {
+  /** attack: the army caught up with the column · relief: the army reached the city the column besieges */
+  kind: "attack" | "relief";
   column: number;
   army: number;
   hour: number;
@@ -497,8 +499,19 @@ export function canAttack(s: GameState, ci: number): JinArmy | null {
 }
 
 /** The battle between a column and a Jin army, fought where the army stands, before luck. */
-export function battleInput(s: GameState, c: Column, a: JinArmy): BattleInput {
-  return { mongol: columnForce(c), jin: armyForce(s, a), ground: battleGround(graph.site(a.at ?? campSite(c).id)) };
+export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0): BattleInput {
+  const jin = armyForce(s, a);
+  return { mongol: columnForce(c), jin: { ...jin, foot: jin.foot + helpers }, ground: battleGround(graph.site(a.at ?? campSite(c).id)) };
+}
+
+/** A garrison fighting outside its walls: all foot. */
+export const garrisonForce = (foot: number): JinForce => ({ foot, horse: 0, quality: R.GARRISON_QUALITY, morale: R.GARRISON_MORALE });
+
+/** Footmen of the garrison who come out to help a relief army that has reached the city this threat is about. */
+export function reliefHelpers(s: GameState, t: Threat | null = s.threat): number {
+  if (!t || t.kind !== "relief") return 0;
+  const city = s.cities[s.jin[t.army].at!];
+  return city ? Math.round(city.garrison * R.RELIEF_GARRISON_SHARE) : 0;
 }
 
 /** How a battle would go: on an average day, on the best day for the Mongols and on the worst. */
@@ -520,39 +533,89 @@ export function orderAttack(s: GameState, ci: number): boolean {
 }
 
 /** Fights the battle between a column and the Jin army where that army stands, and applies what follows. */
-export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin") {
+export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0) {
   const c = s.columns[ci];
   const site = graph.site(a.at!);
-  const mongolLuck = luck(() => random(s)); // the Mongols throw first
-  const jinLuck = luck(() => random(s));
-  const r = resolveBattle({ ...battleInput(s, c, a), luck: { mongol: mongolLuck, jin: jinLuck } });
-  const before = { mongolMen: c.men, jinFoot: a.foot, jinHorse: a.horse };
-  const menLost = Math.min(c.men, Math.round(r.mongolLosses.men));
-  const horsesLost = Math.min(c.horses, Math.round(r.mongolLosses.horses));
-  const footLost = Math.min(a.foot, Math.round(r.jinLosses.foot));
-  const horseLost = Math.min(a.horse, Math.round(r.jinLosses.horse));
-  c.men -= menLost;
-  c.horses -= horsesLost;
-  a.foot -= footLost;
-  a.horse -= horseLost;
-  c.morale = clamp(c.morale + r.morale.mongol, 0, 100);
-  a.morale = clamp(a.morale + r.morale.jin, 0, 100);
-  s.lastBattle = { hour: s.hour, site: site.id, column: c.name, army: a.name, attacker, ...before, result: r };
+  const b = joinBattle(s, c, battleInput(s, c, a, helpers), site, attacker, a.name);
+  // the garrison's men fall in proportion to their share of the foot
+  const footAll = a.foot + helpers;
+  const garrisonLost = footAll > 0 ? Math.round(b.footLost * helpers / footAll) : 0;
+  a.foot = Math.max(0, a.foot - (b.footLost - garrisonLost));
+  a.horse = Math.max(0, a.horse - b.horseLost);
+  const city = s.cities[site.id];
+  if (garrisonLost && city) city.garrison = Math.max(0, city.garrison - garrisonLost);
+  a.morale = clamp(a.morale + b.r.morale.jin, 0, 100);
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
-  const jinDone = r.outcome === "draw" || r.outcome === "victory" || r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
+  const jinDone = b.r.outcome === "draw" || b.r.outcome === "victory" || b.r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
   if (jinDone) goHome(s, a);
   else { a.order = "hold"; a.target = null; a.route = []; }
+  const who = attacker === "mongol" ? `${c.name} attacks the ${a.name}` : `The ${a.name} attacks ${c.name}`;
+  const aid = helpers ? `, with ${fmt(helpers)} men of the garrison,` : "";
+  log(s, `${who}${aid} at ${site.name}: ${b.r.outcome}. ${c.name} loses ${fmt(b.menLost)} men and ${fmt(b.horsesLost)} horses; `
+    + `the Jin lose ${fmt(b.footLost + b.horseLost)} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
+  checkEnd(s);
+}
+
+/**
+ * Throws the dice and fights a battle against a column, at a site. Applies everything on the Mongol side
+ * (losses, spirit, a lost siege) and records it; the caller applies the Jin side and writes the log.
+ */
+function joinBattle(s: GameState, c: Column, input: BattleInput, site: Site, attacker: "mongol" | "jin", enemy: string) {
+  const mongolLuck = luck(() => random(s)); // the Mongols throw first
+  const jinLuck = luck(() => random(s));
+  const r = resolveBattle({ ...input, luck: { mongol: mongolLuck, jin: jinLuck } });
+  const before = { mongolMen: c.men, jinFoot: input.jin.foot, jinHorse: input.jin.horse };
+  const menLost = Math.min(c.men, Math.round(r.mongolLosses.men));
+  const horsesLost = Math.min(c.horses, Math.round(r.mongolLosses.horses));
+  const footLost = Math.min(input.jin.foot, Math.round(r.jinLosses.foot));
+  const horseLost = Math.min(input.jin.horse, Math.round(r.jinLosses.horse));
+  c.men -= menLost;
+  c.horses -= horsesLost;
+  c.morale = clamp(c.morale + r.morale.mongol, 0, 100);
+  s.lastBattle = { hour: s.hour, site: site.id, column: c.name, army: enemy, attacker, ...before, result: r };
   // a beaten column lifts its siege and stands where it is
   if (r.outcome === "defeat" || r.outcome === "disaster") {
     if (c.siege) liftSiege(s, c);
     c.route = [];
     c.halted = true;
   }
-  const who = attacker === "mongol" ? `${c.name} attacks the ${a.name}` : `The ${a.name} attacks ${c.name}`;
-  log(s, `${who} at ${site.name}: ${r.outcome}. ${c.name} loses ${menLost.toLocaleString("en")} men and ${horsesLost.toLocaleString("en")} horses; `
-    + `the Jin lose ${(footLost + horseLost).toLocaleString("en")} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
-  checkEnd(s);
+  return { r, menLost, horsesLost, footLost, horseLost };
+}
+
+const fmt = (n: number) => Math.round(n).toLocaleString("en");
+
+// --- the garrison sallies against a weak siege ---
+
+/** Men of the garrison who would sally against this column's siege. */
+export const sallyMen = (s: GameState, c: Column) => Math.round(s.cities[c.siege!].garrison * R.SALLY_SHARE);
+
+/**
+ * True if the garrison of the city this column besieges would sally against it: like a field army, it comes out
+ * only when it judges itself clearly stronger outside the walls, so a siege held by few men or worn horses is at risk.
+ */
+export function sallyThreat(s: GameState, c: Column): boolean {
+  if (!c.siege || c.men <= 0) return false;
+  const city = s.cities[c.siege];
+  if (!city || city.taken || city.garrison <= 0 || isRelieved(s, c.siege)) return false;
+  const st = strength({ mongol: columnForce(c), jin: garrisonForce(sallyMen(s, c)), ground: battleGround(graph.site(c.siege)) });
+  return st.jin >= R.JIN_ATTACK_RATIO * st.mongol;
+}
+
+/** Once a day: garrisons sally against sieges too weak to hold them in. Half the garrison comes out, and walls no longer help it. */
+function sallies(s: GameState) {
+  for (const c of s.columns) {
+    if (!sallyThreat(s, c)) continue;
+    const id = c.siege!, city = s.cities[id], site = graph.site(id);
+    const out = sallyMen(s, c);
+    const b = joinBattle(s, c, { mongol: columnForce(c), jin: garrisonForce(out), ground: battleGround(site) }, site, "jin", `garrison of ${site.name}`);
+    city.garrison = Math.max(0, city.garrison - b.footLost);
+    const held = c.siege === id;
+    log(s, `The garrison of ${site.name} sallies with ${fmt(out)} men against ${c.name}: ${b.r.outcome}. ${c.name} loses ${fmt(b.menLost)} men and ${fmt(b.horsesLost)} horses; `
+      + `the garrison loses ${fmt(b.footLost)}${held ? " and goes back behind its walls" : ""}.`, "alert");
+    checkEnd(s);
+    if (s.over) return;
+  }
 }
 
 // --- a Jin army upon a column: fight, or ride away ---
@@ -572,6 +635,7 @@ export function escapeSite(s: GameState, c: Column, a: JinArmy): string | null {
 export function refuseBlock(s: GameState): string | null {
   const t = s.threat;
   if (!t) return "There is no army to ride away from.";
+  if (t.kind === "relief") return null; // lifting a siege is always possible
   const c = s.columns[t.column], a = s.jin[t.army];
   if (c.condition <= R.REFUSE_MIN_CONDITION) return "The horses are too thin to outrun them.";
   if (c.fatigue >= R.REFUSE_MAX_FATIGUE) return "The horses are too tired to outrun them.";
@@ -586,8 +650,19 @@ export function orderFight(s: GameState): boolean {
   s.threat = null;
   const c = s.columns[t.column], a = s.jin[t.army];
   if (c.men <= 0 || armyMen(a) <= 0 || a.at !== c.at) return false;
-  fight(s, t.column, a, "jin");
+  fight(s, t.column, a, "jin", reliefHelpers(s, t));
+  // a relief army that holds the field goes into the city it came for
+  if (t.kind === "relief" && a.at && a.order === "hold") enterCity(s, a, a.at);
   return true;
+}
+
+/** Lifts the siege before the relief army: the work is lost, and the army brings its food into the city. */
+function liftForRelief(s: GameState, t: Threat) {
+  const c = s.columns[t.column], a = s.jin[t.army];
+  const id = c.siege!;
+  liftSiege(s, c);
+  s.cities[id].progress = 0;
+  enterCity(s, a, id);
 }
 
 /**
@@ -598,6 +673,7 @@ export function orderRefuse(s: GameState): boolean {
   const t = s.threat;
   if (!t || refuseBlock(s)) return false;
   s.threat = null;
+  if (t.kind === "relief") { liftForRelief(s, t); return true; }
   const c = s.columns[t.column], a = s.jin[t.army];
   const site = c.at!, to = escapeSite(s, c, a)!;
   if (c.siege) liftSiege(s, c);
@@ -887,6 +963,8 @@ function endOfDay(s: GameState) {
   }
   if (month >= 3 && month <= 8) for (const st of Object.values(s.sites)) st.grazed *= 1 - R.REGROWTH_PER_DAY;
   for (const [id, city] of Object.entries(s.cities)) city.besiegedDays = s.columns.some(c => c.siege === id) ? city.besiegedDays + 1 : 0;
+  sallies(s);
+  if (s.over) return;
   jinDecide(s);
 }
 

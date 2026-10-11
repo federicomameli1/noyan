@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   MONTH_NAMES, PACES, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  battleGround, battleInput, battleOdds, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  battleGround, battleInput, battleOdds, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -349,6 +349,7 @@ function renderPlace() {
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
     ${started && foe?.at === s.id ? `<button class="primary" id="attack">Attack the ${foe.name}</button>` : ""}
     ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
+    ${started && here && c.siege === s.id && city && sallyThreat(game, c) ? `<p class="note t-bad" style="margin-top:8px">The siege is weak: ${fmt(sallyMen(game, c))} men of the garrison may sally against it at the end of the day.</p>` : ""}
     ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
   if (changed) {
     info.querySelector<HTMLButtonElement>(".close")!.onclick = closePlace;
@@ -604,8 +605,8 @@ function factorList(r: BattleResult, ground: Ground) {
   return r.factors.length ? `<ul class="factors">${r.factors.map(f => `<li>${line(f)}</li>`).join("")}</ul>` : "";
 }
 /** What to expect: the outcome on an average day, and how far luck can move it. */
-function oddsHTML(c: Column, a: JinArmy) {
-  const input = battleInput(game, c, a);
+function oddsHTML(c: Column, a: JinArmy, helpers = 0) {
+  const input = battleInput(game, c, a, helpers);
   const { even, best, worst } = battleOdds(input);
   const up = best.outcome !== even.outcome ? `${OUTCOME[best.outcome]} if fortune is with us` : "";
   const down = worst.outcome !== even.outcome ? `${OUTCOME[worst.outcome]} if it is against us` : "";
@@ -626,6 +627,17 @@ function showBattle(label: string, title: string, body: string, actions: string)
 function renderBattle() {
   const t = game.threat;
   const fresh = game.lastBattle && game.lastBattle !== reportedBattle ? game.lastBattle : null;
+  if (t && t.kind === "relief" && !game.over) {
+    const c = game.columns[t.column], a = game.jin[t.army];
+    const city = game.cities[a.at!], name = graph.site(a.at!).name, helpers = reliefHelpers(game);
+    showBattle(`${c.name} before ${name}`, `The ${a.name} has come to relieve ${name}`,
+      `<p>${fmt(a.foot)} foot and ${fmt(a.horse)} horse stand before the siege lines, and ${fmt(helpers)} men of the garrison make ready to sally behind us.</p>${oddsHTML(c, a, helpers)}`,
+      `<button class="primary big" id="b-fight">Fight them, with the garrison at our backs</button>
+      <button class="big" id="b-refuse">Lift the siege: ${Math.round(city.progress)}% of the work is lost, and they bring ${name} 20 days of food</button>`);
+    $("b-fight").onclick = () => { orderFight(game); render(); };
+    $("b-refuse").onclick = () => { orderRefuse(game); render(); };
+    return;
+  }
   if (t && !game.over) {
     const c = game.columns[t.column], a = game.jin[t.army];
     const block = refuseBlock(game);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropFlock, newGame, orderMarch, orderSiege, planRoute, siegeDays, step, type GameState } from "./game";
+import { dropFlock, newGame, orderMarch, orderRefuse, orderSiege, planRoute, siegeDays, step, type GameState } from "./game";
 import { armyAt, isRelieved, sightLevel } from "./jin";
 import { SCENARIO } from "./scenario";
 
@@ -34,20 +34,27 @@ describe("the relief army", () => {
     expect(army(s).target).toBe("taiyuan");
   });
 
-  it("reaches the besieged city in about two weeks, brings food and stops the siege", () => {
+  it("reaches the besieged city in about two weeks; lifting the siege lets it in with food, and the siege stops", () => {
     const s = at("taiyuan");
     orderSiege(s, 0);
-    let day = 0;
-    while (!army(s).inCity && day < 60) { days(s, 1); day++; }
+    while (!s.threat && s.hour < 60 * 24) step(s);
+    const day = s.hour / 24;
+    expect(s.threat?.kind).toBe("relief");
     expect(army(s).at).toBe("taiyuan");
     expect(day).toBeGreaterThan(20);
     expect(day).toBeLessThan(35);
+    expect(s.log.some(l => l.text.includes("Fight them, or lift the siege") && l.kind === "alert")).toBe(true);
+    const stores = s.cities.taiyuan.stores;
+    expect(orderRefuse(s)).toBe(true);
+    expect(col(s).siege).toBeNull();
+    expect(s.cities.taiyuan.progress).toBe(0);
+    expect(s.cities.taiyuan.stores).toBe(stores + 20);
     expect(isRelieved(s, "taiyuan")).toBe(true);
+    orderSiege(s, 0);
     expect(siegeDays(s, col(s), "taiyuan")).toBe(Infinity);
-    const progress = s.cities.taiyuan.progress, stores = s.cities.taiyuan.stores;
+    const progress = s.cities.taiyuan.progress;
     days(s, 5);
     expect(s.cities.taiyuan.progress).toBe(progress);
-    expect(s.cities.taiyuan.stores).toBe(stores);
     expect(s.log.some(l => l.text.includes("siege can make no headway") && l.kind === "alert")).toBe(true);
   });
 

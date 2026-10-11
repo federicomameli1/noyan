@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { luck, mulberry32, resolveBattle } from "./battle";
 import { BATTLE_SEED, MONGOL_MORALE } from "./constants";
-import { armyForce, battleInput, battleOdds, canAttack, columnForce, escapeSite, fight, newGame, orderAttack, orderFight, orderRefuse, orderSiege, refuseBlock, step, type GameState } from "./game";
+import { armyForce, battleInput, battleOdds, canAttack, columnForce, escapeSite, fight, newGame, orderAttack, orderFight, orderRefuse, orderSiege, refuseBlock, reliefHelpers, sallyThreat, step, type GameState } from "./game";
 import { jinDecide } from "./jin";
 import { makeSave, readSave } from "./save";
+import { SCENARIO } from "./scenario";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
 const col = (s: GameState) => s.columns[0];
@@ -189,5 +190,96 @@ describe("the odds of a battle", () => {
     orderAttack(s, 0);
     expect(s.lastBattle!.result.ratio).toBeGreaterThanOrEqual(worst.ratio);
     expect(s.lastBattle!.result.ratio).toBeLessThanOrEqual(best.ratio);
+  });
+});
+
+describe("a relief army reaches a besieged city", () => {
+  /** The column besieges Taiyuan and the Pingyang army has just come up to it. */
+  function relieved(): GameState {
+    const s = newGame();
+    Object.assign(col(s), { at: "taiyuan", rations: 1e9 });
+    orderSiege(s, 0);
+    s.cities.taiyuan.progress = 40;
+    const near = SCENARIO.graph.neighbours("taiyuan")[0].to;
+    Object.assign(army(s), { at: near, leg: null, route: ["taiyuan"], order: "relieve", target: "taiyuan" });
+    for (let i = 0; i < 24 * 10 && !s.threat; i++) step(s);
+    return s;
+  }
+
+  it("the player chooses: fight them, or lift the siege", () => {
+    const s = relieved();
+    expect(s.threat).toMatchObject({ kind: "relief", column: 0, army: 0 });
+    expect(army(s).inCity).toBe(false);
+    expect(refuseBlock(s)).toBeNull();
+  });
+
+  it("a quarter of the garrison sallies to help them fight", () => {
+    const s = relieved();
+    const garrison = s.cities.taiyuan.garrison;
+    expect(reliefHelpers(s)).toBe(Math.round(garrison / 4));
+    const odds = battleOdds(battleInput(s, col(s), army(s), reliefHelpers(s)));
+    expect(odds.even.ratio).toBeLessThan(battleOdds(battleInput(s, col(s), army(s))).even.ratio);
+    orderFight(s);
+    expect(s.lastBattle!.jinFoot).toBe(7000 + Math.round(garrison / 4));
+    expect(s.cities.taiyuan.garrison).toBeLessThan(garrison);
+  });
+
+  it("beaten, the relief army goes home and the siege goes on; winning, it goes into the city", () => {
+    const won = relieved();
+    orderFight(won);
+    const r = won.lastBattle!.result.outcome;
+    if (r === "defeat" || r === "disaster") {
+      expect(army(won).inCity).toBe(true);
+      expect(col(won).siege).toBeNull();
+    } else {
+      expect(army(won).order).toBe("return");
+      expect(col(won).siege).toBe("taiyuan");
+    }
+    const lost = relieved();
+    Object.assign(col(lost), { men: 1500, horses: 6000, condition: 15 });
+    orderFight(lost);
+    expect(["defeat", "disaster"]).toContain(lost.lastBattle!.result.outcome);
+    expect(army(lost).inCity).toBe(true);
+    expect(col(lost).siege).toBeNull();
+  });
+
+  it("lifting the siege throws away the work and feeds the city", () => {
+    const s = relieved();
+    const stores = s.cities.taiyuan.stores;
+    orderRefuse(s);
+    expect(col(s).siege).toBeNull();
+    expect(s.cities.taiyuan.progress).toBe(0);
+    expect(s.cities.taiyuan.stores).toBe(stores + 20);
+    expect(army(s).inCity).toBe(true);
+    expect(s.lastBattle).toBeNull();
+  });
+});
+
+describe("the garrison sallies", () => {
+  it("not against a strong siege, even at Taiyuan", () => {
+    const s = newGame();
+    s.jin = [];
+    Object.assign(col(s), { at: "taiyuan", rations: 1e9 });
+    orderSiege(s, 0);
+    expect(sallyThreat(s, col(s))).toBe(false);
+    days(s, 3);
+    expect(s.lastBattle).toBeNull();
+  });
+
+  it("against a siege held on spent horses: half the garrison comes out, and a defeat lifts the siege", () => {
+    const s = newGame();
+    s.jin = [];
+    Object.assign(col(s), { at: "taiyuan", men: 1500, horses: 6000, condition: 15, rations: 1e9 });
+    orderSiege(s, 0);
+    expect(sallyThreat(s, col(s))).toBe(true);
+    const garrison = s.cities.taiyuan.garrison;
+    days(s, 1);
+    const b = s.lastBattle!;
+    expect(b.army).toBe("garrison of Taiyuan");
+    expect(b.jinFoot).toBe(garrison / 2);
+    expect(b.jinHorse).toBe(0);
+    expect(s.cities.taiyuan.garrison).toBe(garrison - Math.round(b.result.jinLosses.foot));
+    expect(s.log.some(l => l.text.startsWith("The garrison of Taiyuan sallies") && l.kind === "alert")).toBe(true);
+    if (b.result.outcome === "defeat" || b.result.outcome === "disaster") expect(col(s).siege).toBeNull();
   });
 });
