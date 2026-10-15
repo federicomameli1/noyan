@@ -4,6 +4,11 @@ import { Delaunay } from "d3-delaunay";
 import { CITIES, REGIONS, ROADS, project, type CityType, type Graph, type Point, type Region, type Site } from "../sim";
 import { GEO, type Pass } from "./geo";
 
+/** Delay before the map tooltip appears over places, passes and Jin armies (ms). */
+const TIP_DELAY_SITE = 150;
+/** Delay before the map tooltip appears over regions (ms). */
+const TIP_DELAY_REGION = 600;
+
 export type Layer = "map" | "terrain" | "pasture" | "political" | "diplomatic";
 
 export const LABELS = {
@@ -87,6 +92,8 @@ export interface GameMap {
   setColumns(cols: readonly ColumnMark[]): void;
   /** draws the planned route, as (lon, lat) points; empty to clear it */
   setRoute(points: readonly (readonly [number, number])[]): void;
+  /** makes the planned route's dashes flow toward its end by px screen pixels */
+  advanceRoute(px: number): void;
   /** draws a possible route, fainter than the planned one; empty to clear it */
   setPreview(points: readonly (readonly [number, number])[]): void;
   /** highlights a site of the graph, or none */
@@ -180,6 +187,9 @@ export function createMap(opts: MapOptions): GameMap {
   const centers = REGIONS.map(r => [...project(r.lon, r.lat)] as [number, number]);
   let layer: Layer = "pasture";
   let selected: Region | null = null;
+  /** dash offset of the planned route, in screen pixels; the dashes flow toward its end */
+  let routeOffset = 0;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // seeded pseudo-random generator, so the drawing is always the same
   let seed = 11;
@@ -230,9 +240,9 @@ export function createMap(opts: MapOptions): GameMap {
   const cells = REGIONS.map((r, i) => {
     const p = el("path", { d: vor.renderCell(i), class: "region" }, washG);
     // "region" in the text, so it is not mistaken for the place next to it
-    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} region · pasture ${r.pasture}`, e); });
+    p.addEventListener("pointerenter", e => { if (!drag) showTip(`${r.name} region · pasture ${r.pasture}`, e, TIP_DELAY_REGION); });
     p.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
-    p.addEventListener("pointerleave", () => { tip.hidden = true; });
+    p.addEventListener("pointerleave", hideTip);
     p.addEventListener("click", () => { if (!moved) select(r); });
     return p;
   });
@@ -403,10 +413,10 @@ export function createMap(opts: MapOptions): GameMap {
     t.textContent = p.name.replace(" Pass", "");
     obstacles.push({ x: p.x - 12, y: p.y - 12, width: 24, height: 24 });
     toPlace.push({ el: t, ax: p.x, ay: p.y, pri: 0, cands: [[dx, dy, anc], [15, 4, "start"], [-15, 4, "end"], [0, -17, "middle"], [0, 25, "middle"], [13, -10, "start"], [-13, -10, "end"], [13, 20, "start"], [-13, 20, "end"]] });
-    const show = (e: PointerEvent) => { if (!drag) showTip(tipText(p.id, p.name, p.name + " · pass"), e); };
+    const show = (e: PointerEvent) => { if (!drag) showTip(tipText(p.id, p.name, p.name + " · pass"), e, TIP_DELAY_SITE); };
     g.addEventListener("pointerenter", show);
-    g.addEventListener("pointermove", show);
-    g.addEventListener("pointerleave", () => { tip.hidden = true; });
+    g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
+    g.addEventListener("pointerleave", hideTip);
     const pick = () => { if (!moved) opts.onSelectPass?.(p); };
     g.addEventListener("click", pick);
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
@@ -470,9 +480,9 @@ export function createMap(opts: MapOptions): GameMap {
       toPlace.push({ el: t, ax: x, ay: y, pri: 1, cands: RING });
     }
     obstacles.push({ x: x - 3, y: y - 3, width: 6, height: 6 });
-    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, `${site.name} · ${KIND_TEXT[site.kind]}`), e); opts.onHoverSite?.(site); } });
+    g.addEventListener("pointerenter", e => { if (!drag) { showTip(tipText(site.id, site.name, `${site.name} · ${KIND_TEXT[site.kind]}`), e, TIP_DELAY_SITE); opts.onHoverSite?.(site); } });
     g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
-    g.addEventListener("pointerleave", () => { tip.hidden = true; opts.onHoverSite?.(null); });
+    g.addEventListener("pointerleave", () => { hideTip(); opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
     g.addEventListener("click", pick);
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
@@ -582,9 +592,9 @@ export function createMap(opts: MapOptions): GameMap {
       el("g", {}, g).innerHTML = jinBanner();
       const label = el("text", { x: 2, y: -19, "text-anchor": "middle", class: "city army-label" }, g);
       const title = el("title", {}, g);
-      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent, e); });
+      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent ?? "", e, TIP_DELAY_SITE); });
       g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
-      g.addEventListener("pointerleave", () => { tip.hidden = true; });
+      g.addEventListener("pointerleave", hideTip);
       armyGs.push({ g, ring, label, title });
     }
     return armyGs[i];
@@ -635,13 +645,28 @@ export function createMap(opts: MapOptions): GameMap {
     });
     selPath.setAttribute("d", selected ? vor.renderCell(selected.id) : "");
   }
-  /** null keeps the text, so the game can add to it on hover (a route's length, the horses on arrival) */
-  function showTip(text: string | null, e: PointerEvent) {
+  /** one timer for the whole map: un-hides the tip after the delay, unless something hides it first */
+  let tipTimer = 0;
+  /**
+   * Sets the text (null keeps it) and the position at once. If the tip is already visible it stays visible.
+   * If it is hidden, it appears now for touch input or no delay, else after `delay` ms.
+   * A move (null text) only moves the tip: it never reveals it and never restarts the timer.
+   */
+  function showTip(text: string | null, e: PointerEvent, delay = 0) {
     const b = stage.getBoundingClientRect();
-    tip.hidden = false;
     if (text !== null) tip.textContent = text;
     tip.style.left = e.clientX - b.left + "px";
     tip.style.top = e.clientY - b.top + "px";
+    if (!tip.hidden) return;
+    if (text === null) return;
+    window.clearTimeout(tipTimer);
+    if (delay === 0 || e.pointerType === "touch") { tip.hidden = false; return; }
+    tipTimer = window.setTimeout(() => { tip.hidden = false; }, delay);
+  }
+  /** hides the tip and drops any pending delay */
+  function hideTip() {
+    window.clearTimeout(tipTimer);
+    tip.hidden = true;
   }
   function select(r: Region) {
     selected = r;
@@ -706,7 +731,7 @@ export function createMap(opts: MapOptions): GameMap {
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!moved && Math.hypot(dx, dy) < 4) return;
-    moved = true; svg.classList.add("drag"); tip.hidden = true;
+    moved = true; svg.classList.add("drag"); hideTip();
     const b = svg.getBoundingClientRect();
     vb.x = drag.vx - (dx * vb.w) / b.width; vb.y = drag.vy - (dy * vb.h) / b.height;
     clampVB(); setVB();
@@ -761,6 +786,12 @@ export function createMap(opts: MapOptions): GameMap {
     },
     setRoute(points) {
       routePath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
+    },
+    advanceRoute(px) {
+      if (reducedMotion) return;
+      // 14 = 9 + 5, the dash pattern of the route; a decreasing dashoffset moves the dashes toward the end
+      routeOffset = ((routeOffset - px) % 14 + 14) % 14;
+      routePath.setAttribute("stroke-dashoffset", routeOffset.toFixed(2));
     },
     selectSite(id) {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
