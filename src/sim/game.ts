@@ -851,6 +851,15 @@ export function barredAt(s: GameState, c: Column): string | null {
   return armyAt(s, c.route[0]) ? c.route[0] : null;
 }
 
+/** How a column moves along the graph: where it may enter, what is logged on arrival, and who falls on its rear on leaving. */
+function columnMover(s: GameState, c: Column) {
+  return {
+    canEnter: (next: string, last: boolean) => last || !armyAt(s, next),
+    arrive: (site: string) => { if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(site).name}.`, "arrival"); },
+    leave: (site: string) => sortie(s, c, site),
+  };
+}
+
 function stepColumn(s: GameState, c: Column, hourOfDay: number) {
   const pace = R.PACES[effectivePace(c)];
   const barred = isMoving(c) ? barredAt(s, c) : null;
@@ -865,9 +874,29 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
   }
   c.today.marchHours++;
   c.fatigue = Math.min(100, c.fatigue + pace.fatiguePerHour * remountFactor(c));
-  c.today.km += advance(c, pace.kmPerHour * speedFactor(c), (next, last) => last || !armyAt(s, next), site => {
-    if (c.route.length === 0) log(s, `${c.name} reaches ${graph.site(site).name}.`, "arrival");
-  }, site => sortie(s, c, site));
+  const mv = columnMover(s, c);
+  c.today.km += advance(c, pace.kmPerHour * speedFactor(c), mv.canEnter, mv.arrive, mv.leave);
+}
+
+/**
+ * Moves a column km of ground along its route at once, as if it had marched there: it stops before a
+ * place a Jin army bars, logs the arrival and lets any garrison fall on its rear on leaving. It adds
+ * no fatigue and counts no marching hours. Returns the km covered.
+ */
+export function jumpAhead(s: GameState, c: Column, km: number): number {
+  const mv = columnMover(s, c);
+  let covered = 0;
+  // one leg at a time: advance() takes km of marching, which a slow link turns into less ground
+  while (km - covered > 1e-6) {
+    const from = c.leg ? c.leg.from : c.at, to = c.leg ? c.leg.to : c.route[0];
+    if (!from || !to) break;
+    const link = linkBetween(graph, from, to)!;
+    const ground = Math.min(km - covered, link.km - (c.leg?.done ?? 0));
+    const got = advance(c, ground / R.LINKS[link.kind].speed, mv.canEnter, mv.arrive, mv.leave);
+    if (got <= 1e-9) break;
+    covered += got;
+  }
+  return covered;
 }
 
 // --- walled cities left behind ---
