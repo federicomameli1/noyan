@@ -280,7 +280,9 @@ function stepConvoys(s: GameState, marching: boolean) {
   if (marching) {
     for (const cv of s.convoys) {
       if (!cv.leg && !cv.route.length) continue;
-      advance(cv, R.CONVOY_KM_PER_DAY / R.JIN_MARCH_HOURS, () => true, () => {});
+      // a column standing on the road stops the wagons at its place, where it falls on them below
+      const blocked = () => s.columns.some(c => c.men > 0 && c.at !== null && c.at === cv.at);
+      advance(cv, R.CONVOY_KM_PER_DAY / R.JIN_MARCH_HOURS, () => !blocked(), () => {});
     }
   }
   for (const cv of [...s.convoys]) {
@@ -298,7 +300,8 @@ function stepConvoys(s: GameState, marching: boolean) {
     if (!cv.at) continue;
     const c = s.columns.find(c => c.at === cv.at && c.men > 0);
     if (!c) continue;
-    const rations = R.CONVOY_FOOD * armyMen(a) * R.CONVOY_RATIONS_SHARE;
+    // as with a city's stores, the column takes no more than it can carry
+    const rations = Math.max(0, Math.min(R.CONVOY_FOOD * armyMen(a) * R.CONVOY_RATIONS_SHARE, c.men * R.MAX_RATION_DAYS - c.rations));
     c.rations += rations;
     c.grain += R.CONVOY_GRAIN_DAYS;
     log(s, `${c.name} falls on a Jin supply convoy near ${graph.site(cv.at).name}: ${fmt(rations)} rations and ${R.CONVOY_GRAIN_DAYS} days of grain. The ${a.name} will go hungry.`, "arrival");

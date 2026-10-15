@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONVOY_EVERY, CONVOY_FOOD, CONVOY_GRAIN_DAYS, CONVOY_RATIONS_SHARE, HUNGER_DESERTION, HUNGER_MORALE, JIN_FOOD_DAYS } from "./constants";
+import { CONVOY_EVERY, CONVOY_FOOD, CONVOY_GRAIN_DAYS, CONVOY_RATIONS_SHARE, HUNGER_DESERTION, HUNGER_MORALE, JIN_FOOD_DAYS, MAX_RATION_DAYS } from "./constants";
 import { newGame, step, type GameState } from "./game";
 import { armyMen, jinDecide } from "./jin";
 import { makeSave, readSave } from "./save";
@@ -89,6 +89,31 @@ describe("convoys", () => {
     let warned = false;
     for (let i = 0; i < 30 && !warned; i++) { days(s, 1); warned = s.log.some(l => l.text.includes("going hungry")); }
     expect(warned).toBe(true);
+  });
+
+  it("are stopped and captured by a column standing at a place on their road", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "huozhou", rations: 100 });
+    s.cities.fenzhou.taken = true; // a taken city does not feed the army: it is in the field there
+    place(s, 0, "fenzhou");
+    days(s, CONVOY_EVERY);
+    expect(s.convoys).toHaveLength(1);
+    let captured = false;
+    for (let h = 0; h < 30 * 24 && !captured; h++) {
+      step(s);
+      captured = s.log.some(l => l.text.includes("falls on a Jin supply convoy near Huozhou"));
+    }
+    expect(captured).toBe(true);
+    expect(army(s).food).toBeLessThan(JIN_FOOD_DAYS);
+  });
+
+  it("give the column no more rations than it can carry", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "pingyang", rations: col(s).men * MAX_RATION_DAYS - 50 });
+    place(s, 0, "huozhou");
+    days(s, CONVOY_EVERY + 1 / 24);
+    expect(s.convoys).toHaveLength(0);
+    expect(col(s).rations).toBeLessThanOrEqual(col(s).men * MAX_RATION_DAYS);
   });
 });
 
