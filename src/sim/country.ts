@@ -4,6 +4,7 @@
 
 import * as R from "./constants";
 import { dateOf, log, type Column, type GameState } from "./game";
+import { raiseEvent } from "./events";
 import type { Site } from "./graph";
 import { SCENARIO } from "./scenario";
 
@@ -66,6 +67,8 @@ export function forageBlock(s: GameState, c: Column, kind: ForageKind): string |
 export function orderForage(s: GameState, ci: number, kind: ForageKind): boolean {
   const c = s.columns[ci];
   if (forageBlock(s, c, kind)) return false;
+  // before the villages are sacked the elders may offer a tribute to save them
+  if (kind === "plunder" && raiseEvent(s, "tribute", ci, c.at!)) return true;
   c.foraging = { kind, until: s.hour + forageDays(kind) * 24 };
   c.route = [];
   c.waiting = null;

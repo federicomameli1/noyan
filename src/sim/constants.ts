@@ -270,3 +270,17 @@ export const SLAUGHTER_SHARE = 0.5;
 export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
+
+// --- events at places (layer 2) ---
+/** share of the villages' stores the elders offer to be spared [S] */
+export const TRIBUTE_SHARE = 1 / 3;
+/** points of hostility the villages lose when the tribute is taken [S] */
+export const TRIBUTE_CALM = 10;
+/** a day by the fires recovers this much fatigue [S] */
+export const FROST_REST = 20;
+/** marching on through a hard frost costs this much condition [S] */
+export const FROST_COLD = 5;
+/** thin Jin horses the Mongols round up after a victory [S] */
+export const HERD_HORSES = 400;
+/** condition of the horses rounded up off the battlefield [S] */
+export const HERD_CONDITION = 30;

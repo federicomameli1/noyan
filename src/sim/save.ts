@@ -2,11 +2,12 @@
 // to recognise it. This file only builds and checks saves; where they are kept is up to the interface.
 import { dateOf, type GameState } from "./game";
 import { formatDate } from "./calendar";
+import { isEventId } from "./events";
 import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -60,6 +61,10 @@ export function readSave(data: unknown): SaveFile {
   // saves made before a Jin army could catch a column
   game.threat ??= null;
   if (game.threat && ((game.threat.kind !== "attack" && game.threat.kind !== "relief") || !isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
+  // saves made before an event could wait for an answer
+  if (!Array.isArray(game.eventsDone) || !game.eventsDone.every(k => typeof k === "string")) fail("The save is damaged.");
+  const ev: unknown = game.event;
+  if (ev !== null && !(isObject(ev) && isEventId(ev.id) && isNumber(ev.column) && !!game.columns[ev.column] && typeof ev.site === "string" && isNumber(ev.hour))) fail("The save is damaged.");
   const active = isNumber(d.active) && d.active >= 0 && d.active < game.columns.length ? Math.floor(d.active) : 0;
   return {
     format: SAVE_FORMAT, version: SAVE_VERSION, scenario: SCENARIO.name,

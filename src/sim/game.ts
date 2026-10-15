@@ -7,6 +7,7 @@ import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
+import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
@@ -41,6 +42,8 @@ export interface Column {
   route: string[];
   /** set by a halt order: the column stays where it is, even halfway along a link */
   halted: boolean;
+  /** hour until which the column stays where it is, resting; 0 when not resting */
+  restUntil: number;
   /** a Jin army bars the road at this site: the column waits in front of it */
   waiting: string | null;
   today: { marchHours: number; km: number };
@@ -136,8 +139,20 @@ export interface GameState {
   lastBattle: LastBattle | null;
   /** a Jin army has caught up with a column: the player chooses to fight or to ride away */
   threat: Threat | null;
+  /** an event waits for the player's answer: the interface stops time until it is given */
+  event: PendingEvent | null;
+  /** keys of the events already raised, so each happens once */
+  eventsDone: string[];
   over: boolean;
   result: "victory" | "defeat" | null;
+}
+
+/** A short event at a place, waiting for the player's answer. Indexes into `columns`. */
+export interface PendingEvent {
+  id: EventId;
+  column: number;
+  site: string;
+  hour: number;
 }
 
 /** A Jin army upon a column, waiting for the player's answer. Indexes into `columns` and `jin`. */
@@ -175,7 +190,7 @@ export const hasHerders = (site: Site): boolean => site.kind === "pasture" && si
 function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
-    condition: c.condition, fatigue: 0, morale: R.MONGOL_MORALE, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, waiting: null,
+    condition: c.condition, fatigue: 0, morale: R.MONGOL_MORALE, pace: "normal", at, cameFrom: null, leg: null, route: [], halted: false, restUntil: 0, waiting: null,
     today: { marchHours: 0, km: 0 }, foraging: null, siege: null, engineers: false, grain: 0, reported: { band: conditionBand(c.condition), foodDays: 0, starving: false }, lastDay: null,
   };
   col.reported.foodDays = foodDays(col);
@@ -192,7 +207,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
@@ -572,6 +587,8 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   log(s, `${who}${aid} at ${site.name}: ${b.r.outcome}. ${c.name} loses ${fmt(b.menLost)} men and ${fmt(b.horsesLost)} horses; `
     + `the Jin lose ${fmt(b.footLost + b.horseLost)} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
   checkEnd(s);
+  // a beaten enemy leaves horses loose on the field: the column can round them up
+  if ((b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);
 }
 
 /**
@@ -773,9 +790,12 @@ export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
 /** Advances the game by one hour. */
 export function step(s: GameState) {
   if (s.over) return;
+  // the player let time run without answering an event: it takes its last choice, the mildest
+  if (s.event && s.event.hour < s.hour) chooseEvent(s, lastChoice(s));
   const hourOfDay = dateOf(s).hour;
   for (const c of s.columns) { stepForage(s, c); stepColumn(s, c, hourOfDay); }
   stepJin(s, hourOfDay);
+  checkEvents(s);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
   const next = SCENARIO.reinforcements[s.arrived];
@@ -838,7 +858,7 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
     if (barred) log(s, `${c.name} halts: a Jin army bars the road at ${graph.site(barred).name}.`, "alert");
     c.waiting = barred;
   }
-  const marching = !barred && isMoving(c) && hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + pace.marchHours;
+  const marching = !barred && s.hour >= c.restUntil && isMoving(c) && hourOfDay >= R.MARCH_START_HOUR && hourOfDay < R.MARCH_START_HOUR + pace.marchHours;
   if (!marching) {
     c.fatigue = Math.max(0, c.fatigue - R.FATIGUE_RECOVERY * (0.5 + c.condition / 200));
     return;
