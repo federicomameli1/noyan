@@ -1,8 +1,8 @@
 import "./style.css";
 import {
-  MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
+  HERDERS_REGROW, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
   battleGround, battleInput, battleOdds, forageBlock, forageDays, forageYield, orderForage, population, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
-  speedFactor, spoils, step, stormCost, stormFails, takeFlock, describeSave, makeSave, readSave, saveFileName,
+  speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
@@ -343,6 +343,7 @@ function renderPlace() {
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
+      ${hasHerders(s) ? `<dt>Herders</dt><dd>${st.herders > 0 ? `${fmt(st.herders)} sheep to spare` : `none left, ${HERDERS_REGROW} a day grow back`}</dd>` : ""}
       ${countryText(s)}
       ${armiesAt(s.id).map(a => `<dt>Jin army</dt><dd>${armyText(a)}</dd>`).join("")}
     </dl>
@@ -447,6 +448,7 @@ function renderColumn() {
   const perMan = c.horses / Math.max(1, c.men);
   const density = pastureDensity(camp, dateOf(game).month, game.sites[camp.id]);
   const flockHere = c.at ? game.sites[c.at].sheep : 0;
+  const herdersHere = c.at ? game.sites[c.at].herders : 0;
   const blockade = blockadeMen(game, c);
   const changed = setHTML($("column"), `<button class="fold icon" aria-label="${folded ? "Show details" : "Hide details"}" aria-expanded="${!folded}">${folded ? "▴" : "▾"}</button>
     ${game.columns.length > 1 ? `<div class="seg tabs" role="group" aria-label="Column">${game.columns.map((x, i) => `<button data-col="${i}" aria-pressed="${i === active}">${x.name}</button>`).join("")}</div>` : ""}
@@ -479,6 +481,9 @@ function renderColumn() {
         ${c.sheep > 0 ? `<button id="slaughter" title="Half the meat spoils without time to dry it">Slaughter, +${fmt(c.sheep * RATIONS_PER_SHEEP * SLAUGHTER_SHARE)} rations</button>` : ""}
         ${flockHere > 0 ? `<button id="take">Take ${fmt(flockHere)} sheep</button>` : ""}
       </div>
+      ${herdersHere > 0 ? `<div class="seg" role="group" aria-label="Sheep from the herders" title="The allied herders give their sheep for free">
+        ${herdersHere > 500 ? `<button data-herd="500">+500</button>` : ""}${herdersHere > 1000 ? `<button data-herd="1000">+1,000</button>` : ""}<button data-herd="all">All ${fmt(herdersHere)}</button>
+      </div>` : ""}
     </div>
     <p class="outlook">${outlookText()}</p>
     <p class="hint">${c.sheep > 0 ? "The flock sets the pace. Leave it somewhere to march faster." : PACE_HINT[pace]}${speedFactor(c) < 1 ? `. Tired or thin horses: ${Math.round(PACES[pace].marchHours * PACES[pace].kmPerHour * speedFactor(c))} km a day.` : ""}</p>`);
@@ -494,6 +499,7 @@ function renderColumn() {
   panel.querySelector<HTMLButtonElement>("#blockade")?.addEventListener("click", () => { leaveBlockade(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#drop")?.addEventListener("click", () => { dropFlock(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, active); render(); });
+  panel.querySelectorAll<HTMLButtonElement>("[data-herd]").forEach(b => { b.onclick = () => { takeFromHerders(game, active, b.dataset.herd === "all" ? herdersHere : Number(b.dataset.herd)); render(); }; });
   panel.querySelector<HTMLButtonElement>("#slaughter")?.addEventListener("click", () => { slaughterFlock(game, active); render(); });
 }
 

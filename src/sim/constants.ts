@@ -264,3 +264,9 @@ export const THEFT_HOSTILITY = 70;
 export const HORSE_THEFT = 0.002;
 /** share of the meat that can be eaten when a whole flock is slaughtered at once [S] */
 export const SLAUGHTER_SHARE = 0.5;
+
+// --- allied herders ---
+/** sheep each allied pasture holds at the start and at most [S] */
+export const HERDERS_RESERVE = 2500;
+/** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
+export const HERDERS_REGROW = 40;
