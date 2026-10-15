@@ -8,7 +8,7 @@ import { luck, randomStep, resolveBattle, strength, type BattleInput, type Battl
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
-import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type JinArmy } from "./jin";
+import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export interface Leg {
@@ -128,6 +128,10 @@ export interface GameState {
   columns: Column[];
   /** Jin armies in the field */
   jin: JinArmy[];
+  /** Jin wagon convoys feeding the field armies */
+  convoys: Convoy[];
+  /** days since convoys were last sent out */
+  convoyDay: number;
   sites: Record<string, SiteState>;
   cities: Record<string, CityState>;
   log: LogEntry[];
@@ -207,7 +211,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }

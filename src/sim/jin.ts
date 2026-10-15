@@ -7,7 +7,7 @@
 import * as R from "./constants";
 import { strength } from "./battle";
 import { distanceKm, findPath, type Site } from "./graph";
-import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg } from "./game";
+import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg, type Mover } from "./game";
 import { SCENARIO, type JinArmySpec } from "./scenario";
 
 const graph = SCENARIO.graph;
@@ -52,12 +52,22 @@ export interface JinArmy {
   seen: Sighting | null;
   /** highest level already reported in the log, back to 0 after a day out of sight */
   reported: number;
+  /** days of food left: field armies eat their stores, raiders live off the land */
+  food: number;
+}
+
+/** A Jin wagon convoy carrying food from a home city to an army in the field. `army` indexes `s.jin`. */
+export interface Convoy extends Mover {
+  army: number;
+  /** days of food it carries */
+  food: number;
 }
 
 export function newJin(): JinArmy[] {
   return SCENARIO.jin.map(j => ({
     name: j.name, kind: j.kind, foot: j.foot, horse: j.horse, quality: j.quality, morale: j.morale, kmPerDay: j.kmPerDay, home: j.home,
     at: j.home, leg: null, cameFrom: null, route: [], order: "hold", target: null, inCity: false, sight: 0, seen: null, reported: 0,
+    food: j.kind === "field" ? R.JIN_FOOD_DAYS : 0,
   }));
 }
 
@@ -199,7 +209,101 @@ export function stepJin(s: GameState, hourOfDay: number) {
       });
     }
   }
+  stepConvoys(s, marching);
   updateSightings(s);
+}
+
+/** True while a field army is out in the field, away from the towns that feed it. */
+const inField = (s: GameState, a: JinArmy) =>
+  !a.inCity && !(a.at !== null && (a.at === a.home || (s.cities[a.at] && !s.cities[a.at].taken)));
+
+/** An army's food is gone: it loses men and spirit, and may fall back. `started` marks the first day. */
+function starve(s: GameState, a: JinArmy, started: boolean) {
+  a.food = 0;
+  a.morale = Math.max(0, a.morale - R.HUNGER_MORALE);
+  a.foot = Math.max(0, a.foot - Math.round(a.foot * R.HUNGER_DESERTION));
+  a.horse = Math.max(0, a.horse - Math.round(a.horse * R.HUNGER_DESERTION));
+  if (started && a.sight > 0) log(s, `The ${a.name} is going hungry: its convoys are not getting through.`, "warning");
+  if (a.morale < R.JIN_RETREAT_MORALE && a.order !== "return") {
+    goHome(s, a);
+    log(s, `The ${a.name} falls back for lack of food.`, "warning");
+  }
+}
+
+/** Points a convoy at a site, keeping any leg it is already on. */
+function convoyRoute(cv: Convoy, dest: string) {
+  const from = cv.at ?? cv.leg!.to;
+  if (from === dest) { cv.route = []; return; }
+  const path = findPath(graph, from, dest);
+  cv.route = path ? path.slice(1) : [];
+}
+
+/** A convoy that can no longer reach its army and has got back home is done: it can be removed. */
+const homeAgain = (s: GameState, cv: Convoy) => {
+  const a = s.jin[cv.army];
+  if (cv.leg || cv.at !== a.home) return false;
+  return armyMen(a) <= 0 || !!s.cities[a.home]?.taken;
+};
+
+/**
+ * Once a day, at midnight, before the armies decide: the food of each field army runs down,
+ * the hungry lose men and spirit, convoys go out every few days, and the ones already out
+ * follow the armies they feed or turn back when there is no one left to feed.
+ */
+export function supplyDay(s: GameState) {
+  for (const a of s.jin) {
+    if (a.kind !== "field" || armyMen(a) <= 0) continue;
+    const before = a.food;
+    if (inField(s, a)) a.food -= 1;
+    else a.food = R.JIN_FOOD_DAYS;
+    if (a.food <= 0) starve(s, a, before > 0);
+  }
+  s.convoyDay += 1;
+  if (s.convoyDay >= R.CONVOY_EVERY) {
+    s.convoyDay = 0;
+    for (const [i, a] of s.jin.entries()) {
+      if (a.kind !== "field" || armyMen(a) <= 0 || !inField(s, a) || s.cities[a.home]?.taken) continue;
+      const to = a.at ?? a.leg!.to;
+      const path = findPath(graph, a.home, to);
+      if (path) s.convoys.push({ at: a.home, leg: null, cameFrom: null, route: path.slice(1), army: i, food: R.CONVOY_FOOD });
+    }
+  }
+  for (const cv of s.convoys) {
+    const a = s.jin[cv.army];
+    convoyRoute(cv, armyMen(a) <= 0 || s.cities[a.home]?.taken ? a.home : a.at ?? a.leg!.to);
+  }
+  s.convoys = s.convoys.filter(cv => !homeAgain(s, cv));
+}
+
+/** Moves the convoys, delivers the ones that reach their army, and lets columns fall on the others. */
+function stepConvoys(s: GameState, marching: boolean) {
+  if (marching) {
+    for (const cv of s.convoys) {
+      if (!cv.leg && !cv.route.length) continue;
+      advance(cv, R.CONVOY_KM_PER_DAY / R.JIN_MARCH_HOURS, () => true, () => {});
+    }
+  }
+  for (const cv of [...s.convoys]) {
+    const a = s.jin[cv.army];
+    if (!a) continue;
+    // a convoy that can no longer reach its army and has got back home is done
+    if (homeAgain(s, cv)) { s.convoys.splice(s.convoys.indexOf(cv), 1); continue; }
+    // the convoy reaches the army where it stands: it is handed over
+    if (a.at !== null && !s.cities[a.home]?.taken && armyMen(a) > 0 && cv.at === a.at) {
+      a.food = Math.min(R.JIN_FOOD_DAYS, a.food + cv.food);
+      s.convoys.splice(s.convoys.indexOf(cv), 1);
+      continue;
+    }
+    // a column at the same place falls on it: only columns standing at a site, not on a link
+    if (!cv.at) continue;
+    const c = s.columns.find(c => c.at === cv.at && c.men > 0);
+    if (!c) continue;
+    const rations = R.CONVOY_FOOD * armyMen(a) * R.CONVOY_RATIONS_SHARE;
+    c.rations += rations;
+    c.grain += R.CONVOY_GRAIN_DAYS;
+    log(s, `${c.name} falls on a Jin supply convoy near ${graph.site(cv.at).name}: ${fmt(rations)} rations and ${R.CONVOY_GRAIN_DAYS} days of grain. The ${a.name} will go hungry.`, "arrival");
+    s.convoys.splice(s.convoys.indexOf(cv), 1);
+  }
 }
 
 /** An army reaches the end of its route. */
@@ -281,8 +385,9 @@ function knownFlocks(s: GameState, a: JinArmy): string[] {
   }).map(([id]) => id);
 }
 
-/** Once a day, at midnight: each army looks at what it knows and chooses what to do. */
+/** Once a day, at midnight: the convoys run and the food is counted, then each army chooses what to do. */
 export function jinDecide(s: GameState) {
+  supplyDay(s);
   for (const a of s.jin) {
     if (armyMen(a) <= 0) continue;
     if (decideAttack(s, a)) continue;

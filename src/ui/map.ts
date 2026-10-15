@@ -60,9 +60,23 @@ export interface ArmyMark {
   title: string;
 }
 
+/** A Jin supply convoy on the road, where the scouts can see it. */
+export interface ConvoyMark {
+  lon: number;
+  lat: number;
+  /** longer text for the tooltip */
+  title: string;
+}
+
 /** A Jin banner on a pole, drawn around (0, 0) with the foot of the pole at the bottom. */
 export function jinBanner(): string {
   return `<path class="jb-pole" d="M-6,10V-14"/><path class="jb-flag" d="M-6,-14H9L5,-9L9,-4H-6Z"/><path class="jb-stripe" d="M-6,-9H6"/>`;
+}
+
+/** A supply wagon, drawn around (0, 0), about 14 px across. */
+export function wagon(): string {
+  return `<rect class="wagon-box" x="-8" y="-6" width="16" height="8" rx="1"/>`
+    + `<circle class="wagon-wheel" cx="-5" cy="6" r="3.2"/><circle class="wagon-wheel" cx="5" cy="6" r="3.2"/>`;
 }
 
 export interface GameMap {
@@ -83,6 +97,8 @@ export interface GameMap {
   setTaken(ids: readonly string[]): void;
   /** Jin armies the scouts see or have seen */
   setArmies(armies: readonly ArmyMark[]): void;
+  /** Jin supply convoys the scouts can see */
+  setConvoys(convoys: readonly ConvoyMark[]): void;
 }
 
 const NS = "http://www.w3.org/2000/svg";
@@ -531,6 +547,30 @@ export function createMap(opts: MapOptions): GameMap {
   [0, 1, 2, 3].forEach(i => el("rect", { x: i * 50 * pxPerKm, y: 0, width: 50 * pxPerKm, height: 5, fill: i % 2 ? paper : ink, stroke: ink, "stroke-width": 0.8 }, scale));
   el("text", { x: 0, y: -6, class: "city" }, scale).textContent = "200 km";
 
+  // Jin supply convoys: a wagon each, under the armies
+  const convoyLayer = el("g", {}, world);
+  const convoyGs: { g: SVGGElement; title: SVGTitleElement }[] = [];
+  let convoyMarks: readonly ConvoyMark[] = [];
+  function convoyG(i: number) {
+    while (convoyGs.length <= i) {
+      const g = el("g", { class: "convoy-mark" }, convoyLayer);
+      el("g", {}, g).innerHTML = wagon();
+      const title = el("title", {}, g);
+      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent, e); });
+      g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
+      g.addEventListener("pointerleave", () => { tip.hidden = true; });
+      convoyGs.push({ g, title });
+    }
+    return convoyGs[i];
+  }
+  function drawConvoys() {
+    const k = Math.min(1.2, Math.max(0.4, labelScale()));
+    convoyMarks.forEach((m, i) => {
+      const [x, y] = project(m.lon, m.lat);
+      convoyG(i).g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
+    });
+  }
+
   // Jin armies: a banner each, under the columns
   const armyLayer = el("g", {}, world);
   const armyGs: { g: SVGGElement; ring: SVGCircleElement; label: SVGTextElement; title: SVGTitleElement }[] = [];
@@ -641,6 +681,7 @@ export function createMap(opts: MapOptions): GameMap {
     for (const [g, x, y] of passGlyphs) g.setAttribute("transform", `translate(${x},${y}) scale(${k}) translate(${-x},${-y})`);
     for (const [g, x, y] of markers) g.setAttribute("transform", `translate(${x},${y}) scale(${k})`);
     drawColumn();
+    drawConvoys();
     drawArmies();
     placeLabels();
   };
@@ -744,6 +785,16 @@ export function createMap(opts: MapOptions): GameMap {
         a.ring.style.display = m.level <= 1 ? "" : "none";
       });
       drawArmies();
+    },
+    setConvoys(convoys) {
+      convoyMarks = convoys;
+      convoyGs.forEach((c, i) => { c.g.style.display = i < convoys.length ? "" : "none"; });
+      convoys.forEach((m, i) => {
+        const c = convoyG(i);
+        c.title.textContent = m.title;
+        c.g.setAttribute("aria-label", m.title);
+      });
+      drawConvoys();
     },
     setTaken(ids) {
       for (const [id, g] of targetGs) g.classList.toggle("taken", ids.includes(id));

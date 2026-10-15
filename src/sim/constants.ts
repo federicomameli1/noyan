@@ -155,6 +155,22 @@ export const JIN_FLOCK_SIGHT_KM = 60;
 export const RELIEF_STORES = 20;
 /** size bands of a Jin army seen from far away, men: up to `small` is small, up to `medium` medium [S] */
 export const ARMY_SIZE = { small: 2000, medium: 6000 } as const;
+/** days of food a Jin field army carries, and the most it can hold [S] */
+export const JIN_FOOD_DAYS = 20;
+/** days between convoys sent from home to an army in the field [S] */
+export const CONVOY_EVERY = 5;
+/** days of food a convoy brings [S] */
+export const CONVOY_FOOD = 10;
+/** km a day a wagon convoy makes, during the Jin marching hours [S] */
+export const CONVOY_KM_PER_DAY = 15;
+/** share of a captured convoy's food the Mongols can use as rations [S] */
+export const CONVOY_RATIONS_SHARE = 0.5;
+/** days of grain for the horses found in a captured convoy [S] */
+export const CONVOY_GRAIN_DAYS = 3;
+/** morale a Jin field army loses each day without food [S] */
+export const HUNGER_MORALE = 5;
+/** share of the foot and horse that desert each day without food [S] */
+export const HUNGER_DESERTION = 0.02;
 
 // --- battles (layer 1) ---
 // A Mongol column against a Jin army. Rules: design doc "07-regole-strato-1", section 4.
