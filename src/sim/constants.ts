@@ -271,7 +271,7 @@ export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
 
-// --- events at places (layer 2) ---
+// --- events at places (layer 1) ---
 /** share of the villages' stores the elders offer to be spared [S] */
 export const TRIBUTE_SHARE = 1 / 3;
 /** points of hostility the villages lose when the tribute is taken [S] */
