@@ -13,6 +13,8 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const graph = SCENARIO.graph;
 const fmt = (n: number) => Math.round(n).toLocaleString("en");
 const stage = $("stage"), info = $("info"), menu = $("menu");
+/** how fast the dashes of the planned route flow toward its end, in screen pixels per second */
+const ROUTE_FLOW = 20; // px per second at 1x
 
 /** replaces an element's content only when it changed, so buttons inside stay clickable while the game runs */
 function setHTML(el: HTMLElement, html: string): boolean {
@@ -741,6 +743,7 @@ function frame(now: number) {
   const dt = Math.min(250, now - last);
   last = now;
   if (playing) {
+    map.advanceRoute((dt / 1000) * speed * ROUTE_FLOW);
     acc += dt * speed;
     let stepped = false;
     while (acc >= MS_PER_HOUR && !game.over && playing) {
