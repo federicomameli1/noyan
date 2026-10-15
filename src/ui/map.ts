@@ -73,6 +73,8 @@ export interface GameMap {
   setColumns(cols: readonly ColumnMark[]): void;
   /** draws the planned route, as (lon, lat) points; empty to clear it */
   setRoute(points: readonly (readonly [number, number])[]): void;
+  /** makes the planned route's dashes flow toward its end by px screen pixels */
+  advanceRoute(px: number): void;
   /** draws a possible route, fainter than the planned one; empty to clear it */
   setPreview(points: readonly (readonly [number, number])[]): void;
   /** highlights a site of the graph, or none */
@@ -164,6 +166,9 @@ export function createMap(opts: MapOptions): GameMap {
   const centers = REGIONS.map(r => [...project(r.lon, r.lat)] as [number, number]);
   let layer: Layer = "pasture";
   let selected: Region | null = null;
+  /** dash offset of the planned route, in screen pixels; the dashes flow toward its end */
+  let routeOffset = 0;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // seeded pseudo-random generator, so the drawing is always the same
   let seed = 11;
@@ -720,6 +725,12 @@ export function createMap(opts: MapOptions): GameMap {
     },
     setRoute(points) {
       routePath.setAttribute("d", points.map(([lon, lat], i) => { const [x, y] = project(lon, lat); return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`; }).join(""));
+    },
+    advanceRoute(px) {
+      if (reducedMotion) return;
+      // 14 = 9 + 5, the dash pattern of the route; a decreasing dashoffset moves the dashes toward the end
+      routeOffset = ((routeOffset - px) % 14 + 14) % 14;
+      routePath.setAttribute("stroke-dashoffset", routeOffset.toFixed(2));
     },
     selectSite(id) {
       const site = id ? graph?.sites.find(s => s.id === id) : undefined;
