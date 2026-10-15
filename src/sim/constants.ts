@@ -284,3 +284,29 @@ export const FROST_COLD = 5;
 export const HERD_HORSES = 400;
 /** condition of the horses rounded up off the battlefield [S] */
 export const HERD_CONDITION = 30;
+/** hostility of the villagers below which a farmer offers to guide the column by a hidden path [S] */
+export const GUIDES_HOSTILITY = 40;
+/** chance the guide is a Jin trap [S] */
+export const GUIDES_TRAP = 0.3;
+/** km of the road the hidden path saves [S] */
+export const GUIDES_KM = 40;
+/** share of the men and horses lost in the ambush when the guide is a trap [S] */
+export const GUIDES_LOSS = 0.03;
+/** morale the ambush costs the column [S] */
+export const GUIDES_MORALE = 10;
+/** Khitan horsemen of a beaten army who ask to serve the Mongols [S] */
+export const DESERTERS_MEN = 200;
+/** and the horses they bring [S] */
+export const DESERTERS_HORSES = 400;
+/** condition of their horses, as for the ones rounded up off a battlefield [S] */
+export const DESERTERS_CONDITION = 50;
+/** morale lost when they are taken in: they are not trusted yet [S] */
+export const DESERTERS_MORALE = 5;
+/** places of the Fen valley where the winter ice can be crossed [S] */
+export const ICE_SITES: readonly string[] = ["yuanping", "xinzhou", "taiyuan", "fenzhou", "huozhou", "pingyang"];
+/** km of the road crossing the frozen Fen saves [S] */
+export const ICE_KM = 60;
+/** chance the ice breaks under part of the herd [S] */
+export const ICE_RISK = 0.1;
+/** share of the horses lost when it does [S] */
+export const ICE_LOSS = 0.02;

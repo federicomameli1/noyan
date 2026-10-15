@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { randomStep } from "./battle";
 import * as R from "./constants";
 import { forageBlock, orderForage } from "./country";
 import { chooseEvent, eventView } from "./events";
-import { dateOf, fight, newGame, orderMarch, step, type GameState } from "./game";
+import { dateOf, fight, jumpAhead, newGame, orderMarch, step, type GameState } from "./game";
 import { makeSave, readSave } from "./save";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
 const col = (s: GameState) => s.columns[0];
+
+/** The first rng state whose next draw satisfies the test, to force the dice of an event. */
+function seedWhere(test: (v: number) => boolean): number {
+  for (let seed = 0; seed < 1e6; seed++) if (test(randomStep(seed).value)) return seed;
+  throw new Error("no seed found");
+}
 
 /** The column fed and standing at a place, Jin armies out of the way. */
 function at(id: string): GameState {
@@ -155,6 +162,175 @@ describe("herd", () => {
     expect(col(s).horses).toBe(horses);
     expect(col(s).condition).toBe(condition);
     expect(col(s).restUntil).toBe(0);
+  });
+});
+
+describe("guides", () => {
+  /** A fed column at Hunyuan, its route on by the mountain path to Lingqiu and beyond. */
+  function guiding(): GameState {
+    const s = at("hunyuan");
+    col(s).route = ["lingqiu", "laiyuan", "zijing"];
+    return s;
+  }
+
+  it("is offered by a farmer where the road turns into the mountains", () => {
+    const s = guiding();
+    step(s);
+    expect(dateOf(s).month).toBe(8); // September: no frost, no ice
+    expect(s.event).toMatchObject({ id: "guides", column: 0, site: "hunyuan" });
+    expect(s.log.at(-1)!.kind).toBe("alert");
+    expect(eventView(s)!.choices).toHaveLength(2);
+  });
+
+  it("a trap costs men, horses and morale, and the column stays where it is", () => {
+    const s = guiding();
+    step(s);
+    s.rng = seedWhere(v => v < R.GUIDES_TRAP);
+    const men = col(s).men, horses = col(s).horses, morale = col(s).morale;
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).men).toBe(men - Math.round(men * R.GUIDES_LOSS));
+    expect(col(s).horses).toBe(horses - Math.round(horses * R.GUIDES_LOSS));
+    expect(col(s).morale).toBe(morale - R.GUIDES_MORALE);
+    expect(col(s).at).toBe("hunyuan");
+    expect(col(s).leg).toBeNull();
+    expect(col(s).route).toEqual(["lingqiu", "laiyuan", "zijing"]);
+  });
+
+  it("a true guide saves about 40 km of the road along the hidden path", () => {
+    const s = guiding();
+    step(s);
+    s.rng = seedWhere(v => v >= R.GUIDES_TRAP);
+    expect(chooseEvent(s, 0)).toBe(true);
+    // the mountain path covers less ground than the road it saves: 40 km of marching, not of ground
+    expect(col(s).at).toBeNull();
+    expect(col(s).leg).toMatchObject({ from: "hunyuan", to: "lingqiu" });
+    expect(col(s).leg!.done / R.LINKS.mountain.speed).toBeCloseTo(R.GUIDES_KM, 0);
+    expect(col(s).route).toEqual(["laiyuan", "zijing"]);
+  });
+
+  it("keeping to the road changes nothing", () => {
+    const s = guiding();
+    step(s);
+    const before = JSON.parse(JSON.stringify(col(s)));
+    expect(chooseEvent(s, 1)).toBe(true);
+    expect(col(s)).toEqual(before);
+  });
+
+  it("does not come back at the same place", () => {
+    const s = guiding();
+    step(s);
+    s.rng = seedWhere(v => v < R.GUIDES_TRAP); // the trap: the column stays at Hunyuan
+    chooseEvent(s, 0);
+    expect(s.eventsDone).toContain("guides@hunyuan");
+    step(s);
+    expect(s.event).toBeNull();
+  });
+});
+
+describe("deserters", () => {
+  /** A column at Huozhou with a weak Jin army in front of it: the Mongols win. */
+  function won(): GameState {
+    const s = newGame();
+    Object.assign(col(s), { at: "huozhou", rations: 1e9 });
+    const a = s.jin[0];
+    Object.assign(a, { at: "huozhou", leg: null, route: [], order: "hold", target: null, sight: 3, foot: 300, horse: 0, quality: 0.6, morale: 20 });
+    fight(s, 0, a, "mongol");
+    return s;
+  }
+
+  it("Khitan horsemen ask to serve right after the victory is answered", () => {
+    const s = won();
+    expect(s.event?.id).toBe("herd");
+    chooseEvent(s, 1); // let the loose horses go
+    step(s);
+    expect(s.event).toMatchObject({ id: "deserters", column: 0, site: "huozhou" });
+    const men = col(s).men, horses = col(s).horses, morale = col(s).morale, condition = col(s).condition;
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).men).toBe(men + R.DESERTERS_MEN);
+    expect(col(s).horses).toBe(horses + R.DESERTERS_HORSES);
+    expect(col(s).morale).toBe(morale - R.DESERTERS_MORALE);
+    // their thin horses water down the condition of the whole herd
+    expect(col(s).condition).toBeCloseTo((condition * horses + R.DESERTERS_CONDITION * R.DESERTERS_HORSES) / (horses + R.DESERTERS_HORSES));
+  });
+
+  it("can be sent away with nothing gained", () => {
+    const s = won();
+    chooseEvent(s, 1);
+    step(s);
+    const men = col(s).men, horses = col(s).horses;
+    expect(chooseEvent(s, 1)).toBe(true);
+    expect(col(s).men).toBe(men);
+    expect(col(s).horses).toBe(horses);
+  });
+});
+
+describe("ice", () => {
+  /** A fed column at Taiyuan, its route on down the Fen valley, in January. */
+  function january(id = "taiyuan"): GameState {
+    const s = at(id);
+    s.hour = 122 * 24; // 1 January 1219
+    col(s).route = ["fenzhou", "huozhou"];
+    return s;
+  }
+
+  it("is offered in January where the Fen is frozen", () => {
+    const s = january();
+    step(s);
+    expect(dateOf(s).month).toBe(0);
+    expect(s.event).toMatchObject({ id: "ice", column: 0, site: "taiyuan" });
+    expect(eventView(s)!.text).toContain("frozen");
+  });
+
+  it("crossing on the ice moves the column about 60 km along the route", () => {
+    const s = january();
+    step(s);
+    s.rng = seedWhere(v => v >= R.ICE_RISK);
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).at).toBeNull();
+    expect(col(s).leg).toMatchObject({ from: "taiyuan", to: "fenzhou" });
+    expect(col(s).leg!.done).toBeCloseTo(R.ICE_KM, 0);
+  });
+
+  it("the ice can break under part of the herd", () => {
+    const s = january();
+    step(s);
+    s.rng = seedWhere(v => v < R.ICE_RISK);
+    const horses = col(s).horses;
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).horses).toBe(horses - Math.round(horses * R.ICE_LOSS));
+  });
+
+  it("is not offered in October", () => {
+    const s = at("taiyuan");
+    s.hour = 30 * 24; // 1 October 1218
+    col(s).route = ["fenzhou", "huozhou"];
+    step(s);
+    expect(dateOf(s).month).toBe(9);
+    expect(s.event).toBeNull();
+  });
+});
+
+describe("jumpAhead", () => {
+  it("stops before a site held by a Jin army, like marching does", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "hunyuan", rations: 1e9 });
+    col(s).route = ["lingqiu", "laiyuan", "zijing"];
+    Object.assign(s.jin[0], { kind: "field", at: "laiyuan", leg: null, route: [], foot: 5000, horse: 0 });
+    const covered = jumpAhead(s, col(s), 1000);
+    expect(covered).toBeGreaterThan(0);
+    expect(col(s).at).toBe("lingqiu");
+    expect(col(s).leg).toBeNull();
+    expect(col(s).route).toEqual(["laiyuan", "zijing"]);
+  });
+
+  it("moves the column without tiring it or counting marching hours", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "taiyuan", rations: 1e9 });
+    col(s).route = ["fenzhou"];
+    const fatigue = col(s).fatigue;
+    expect(jumpAhead(s, col(s), R.ICE_KM)).toBeCloseTo(R.ICE_KM, 0);
+    expect(col(s).fatigue).toBe(fatigue);
+    expect(col(s).today).toEqual({ marchHours: 0, km: 0 });
   });
 });
 
