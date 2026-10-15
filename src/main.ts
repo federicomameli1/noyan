@@ -1,13 +1,13 @@
 import "./style.css";
 import {
-  HERDERS_REGROW, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
+  HERDERS_REGROW, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, columnPosition, conditionBand, dateOf, distanceKm, dropFlock, effectivePace,
   battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, orderForage, population, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
 } from "./sim";
 import * as saves from "./ui/saves";
-import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type Layer } from "./ui/map";
+import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type ConvoyMark, type Layer } from "./ui/map";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const graph = SCENARIO.graph;
@@ -565,6 +565,7 @@ function render() {
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
   renderColumns();
   renderArmies();
+  renderConvoys();
   map.setTaken(Object.keys(game.cities).filter(id => game.cities[id].taken));
   renderRoute();
   renderColumn();
@@ -589,7 +590,8 @@ function armyText(a: JinArmy) {
   const what = describeSighting(v, a.name);
   const when = now ? "" : ` Last seen ${formatDate(sightingDate(game, v))}.`;
   const doing = v.level === 3 ? `, ${describeOrder(v)}` : "";
-  return `${what[0].toUpperCase() + what.slice(1)}${doing}.${when}`;
+  const hungry = a.sight === 3 && a.food <= 0 ? ", going hungry" : "";
+  return `${what[0].toUpperCase() + what.slice(1)}${doing}${hungry}.${when}`;
 }
 function renderArmies() {
   const marks: ArmyMark[] = [];
@@ -606,6 +608,21 @@ function renderArmies() {
     });
   }
   map.setArmies(marks);
+}
+
+// --- Jin supply convoys, as far as the scouts know them ---
+/** Convoys within sight of a column with men: the wagons that feed the armies. */
+function renderConvoys() {
+  const marks: ConvoyMark[] = [];
+  for (const cv of game.convoys) {
+    const [lon, lat] = columnPosition(cv);
+    const seen = game.columns.some(c => c.men > 0 && distanceKm(lon, lat, ...columnPosition(c)) <= SIGHT_KM.size);
+    if (!seen) continue;
+    const a = game.jin[cv.army];
+    const dest = armyMen(a) > 0 && !game.cities[a.home]?.taken ? a.at ?? a.leg?.to ?? a.home : a.home;
+    marks.push({ lon, lat, title: `Jin supply convoy for the ${a.name}, ${cv.food} days of food, going to ${graph.site(dest).name}` });
+  }
+  map.setConvoys(marks);
 }
 
 function selectColumn(i: number) {
@@ -767,7 +784,7 @@ function frame(now: number) {
     if (stepped && Math.floor(game.hour / 24) !== savedDay) { savedDay = Math.floor(game.hour / 24); autosave(); }
     if (stepped) {
       if (now - lastPanel > 200 || game.log.length !== logSeen) { lastPanel = now; render(); }
-      else { renderColumns(); renderArmies(); renderRoute(); }
+      else { renderColumns(); renderArmies(); renderConvoys(); renderRoute(); }
     }
     if (game.over) setPlaying(false);
   } else acc = 0;
