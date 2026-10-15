@@ -879,13 +879,24 @@ function stepColumn(s: GameState, c: Column, hourOfDay: number) {
 }
 
 /**
- * Moves a column along its route at once, as if it had marched there: it stops before a place a Jin
- * army bars, logs the arrival and lets any garrison fall on its rear on leaving. It adds no fatigue
- * and counts no marching hours. Returns the km covered.
+ * Moves a column km of ground along its route at once, as if it had marched there: it stops before a
+ * place a Jin army bars, logs the arrival and lets any garrison fall on its rear on leaving. It adds
+ * no fatigue and counts no marching hours. Returns the km covered.
  */
 export function jumpAhead(s: GameState, c: Column, km: number): number {
   const mv = columnMover(s, c);
-  return advance(c, km, mv.canEnter, mv.arrive, mv.leave);
+  let covered = 0;
+  // one leg at a time: advance() takes km of marching, which a slow link turns into less ground
+  while (km - covered > 1e-6) {
+    const from = c.leg ? c.leg.from : c.at, to = c.leg ? c.leg.to : c.route[0];
+    if (!from || !to) break;
+    const link = linkBetween(graph, from, to)!;
+    const ground = Math.min(km - covered, link.km - (c.leg?.done ?? 0));
+    const got = advance(c, ground / R.LINKS[link.kind].speed, mv.canEnter, mv.arrive, mv.leave);
+    if (got <= 1e-9) break;
+    covered += got;
+  }
+  return covered;
 }
 
 // --- walled cities left behind ---

@@ -6,7 +6,7 @@
 import * as R from "./constants";
 import { dateOf, jumpAhead, log, random, type Column, type GameState, type PendingEvent } from "./game";
 import { orderForage, population } from "./country";
-import { linkBetween } from "./graph";
+import { linkBetween, type Link } from "./graph";
 import { SCENARIO } from "./scenario";
 
 const graph = SCENARIO.graph;
@@ -163,7 +163,7 @@ const EVENTS: Record<EventId, EventDef> = {
     once: "game",
     text: () => "The Fen is frozen hard; the column could cross on the ice instead of going round by the bridges.",
     choices: () => [
-      { label: "Cross on the ice", cost: `about 2 days saved; ${pct(R.ICE_RISK)}%: the ice breaks, −${pct(R.ICE_LOSS)}% horses` },
+      { label: "Cross on the ice", cost: `${R.ICE_KM} km saved; ${pct(R.ICE_RISK)}%: the ice breaks, −${pct(R.ICE_LOSS)}% horses` },
       { label: "Go round by the bridges", cost: "nothing" },
     ],
     apply: (s, ev, choice) => {
@@ -224,13 +224,26 @@ export function chooseEvent(s: GameState, choice: number): boolean {
   return true;
 }
 
-/** True if a farmer here would guide the column by a hidden path: a friendly people, and a mountain or a pass ahead. */
-function guideOffered(s: GameState, c: Column): boolean {
-  if (!c.at || c.route.length === 0) return false;
-  const link = linkBetween(graph, c.at, c.route[0]);
-  if (!link || (link.kind !== "mountain" && link.kind !== "pass")) return false;
-  return population(graph.site(c.at)) > 0 && s.sites[c.at].hostility < R.GUIDES_HOSTILITY;
+/**
+ * The link a column is on or about to take, and the place it starts from: the place where it stands
+ * with a route ahead, or the one it has just left. Events on the road are raised there, so they come
+ * up whether the column was stopped at the place or only marched through it.
+ */
+function roadAhead(c: Column): { site: string; link: Link } | null {
+  const from = c.leg ? c.leg.from : c.route.length > 0 ? c.at : null;
+  const to = c.leg ? c.leg.to : c.route[0];
+  const link = from && to ? linkBetween(graph, from, to) : undefined;
+  return from && link ? { site: from, link } : null;
 }
+
+/** True if a farmer at the place would guide the column by a hidden path: a friendly people, and a mountain or a pass ahead. */
+function guideOffered(s: GameState, site: string, link: Link): boolean {
+  if (link.kind !== "mountain" && link.kind !== "pass") return false;
+  return population(graph.site(site)) > 0 && s.sites[site].hostility < R.GUIDES_HOSTILITY;
+}
+
+/** True if the road ahead runs down the Fen valley, where the river can be crossed on the ice. */
+const alongTheFen = (link: Link) => link.kind === "road" && R.ICE_SITES.includes(link.a) && R.ICE_SITES.includes(link.b);
 
 /** True in the months of ice: December, January and February. */
 const isIceSeason = (s: GameState) => [11, 0, 1].includes(dateOf(s).month);
@@ -255,10 +268,11 @@ export function checkEvents(s: GameState) {
   // a beaten enemy's horsemen may offer to serve, within a day of the battle
   if (raiseDeserters(s)) return;
   for (const [ci, c] of s.columns.entries()) {
-    if (c.men <= 0 || !c.at || c.route.length === 0) continue;
+    const road = c.men > 0 ? roadAhead(c) : null;
+    if (!road) continue;
     // a farmer offers to guide the column by a hidden path through the mountains
-    if (guideOffered(s, c) && raiseEvent(s, "guides", ci, c.at)) return;
+    if (guideOffered(s, road.site, road.link) && raiseEvent(s, "guides", ci, road.site)) return;
     // the Fen is frozen: the column can cross on the ice instead of going round by the bridges
-    if (isIceSeason(s) && R.ICE_SITES.includes(c.at) && raiseEvent(s, "ice", ci, c.at)) return;
+    if (isIceSeason(s) && alongTheFen(road.link) && raiseEvent(s, "ice", ci, road.site)) return;
   }
 }

@@ -201,10 +201,9 @@ describe("guides", () => {
     step(s);
     s.rng = seedWhere(v => v >= R.GUIDES_TRAP);
     expect(chooseEvent(s, 0)).toBe(true);
-    // the mountain path covers less ground than the road it saves: 40 km of marching, not of ground
     expect(col(s).at).toBeNull();
     expect(col(s).leg).toMatchObject({ from: "hunyuan", to: "lingqiu" });
-    expect(col(s).leg!.done / R.LINKS.mountain.speed).toBeCloseTo(R.GUIDES_KM, 0);
+    expect(col(s).leg!.done).toBeCloseTo(R.GUIDES_KM, 0);
     expect(col(s).route).toEqual(["laiyuan", "zijing"]);
   });
 
@@ -214,6 +213,14 @@ describe("guides", () => {
     const before = JSON.parse(JSON.stringify(col(s)));
     expect(chooseEvent(s, 1)).toBe(true);
     expect(col(s)).toEqual(before);
+  });
+
+  it("is offered to a column that only marches through the place", () => {
+    const s = guiding();
+    s.hour = 8; // by day: the column is on the mountain path at the end of the hour
+    step(s);
+    expect(col(s).at).toBeNull();
+    expect(s.event).toMatchObject({ id: "guides", site: "hunyuan" });
   });
 
   it("does not come back at the same place", () => {
@@ -298,6 +305,13 @@ describe("ice", () => {
     const horses = col(s).horses;
     expect(chooseEvent(s, 0)).toBe(true);
     expect(col(s).horses).toBe(horses - Math.round(horses * R.ICE_LOSS));
+  });
+
+  it("is not offered on a road that leaves the valley", () => {
+    const s = january();
+    col(s).route = ["yuci"];
+    step(s);
+    expect(s.event).toBeNull();
   });
 
   it("is not offered in October", () => {
