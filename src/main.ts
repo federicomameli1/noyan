@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   HERDERS_REGROW, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, campSite, columnPosition, conditionBand, dateOf, dropFlock, effectivePace,
-  battleGround, battleInput, battleOdds, forageBlock, forageDays, forageYield, orderForage, population, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, orderForage, population, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -105,8 +105,8 @@ SPEEDS.forEach(v => {
   speeds.append(b);
 });
 function setPlaying(on: boolean) {
-  // an army upon a column waits for an answer: time does not run until the player gives it
-  playing = on && started && !game.over && !game.threat;
+  // an army upon a column, or an event waiting for an answer, keeps time from running
+  playing = on && started && !game.over && !game.threat && !game.event;
   render();
 }
 $("play").onclick = () => setPlaying(!playing);
@@ -701,6 +701,19 @@ function renderBattle() {
       ${r.factors.length ? `<p class="label">What decided it</p>${factorList(r, battleGround(site))}` : ""}`,
       `<button class="primary big" id="b-ok">Go on</button>`);
     $("b-ok").onclick = () => { reportedBattle = game.lastBattle; render(); };
+    return;
+  }
+  // an event waits for an answer: it is shown after the battle report, so the report is read first
+  const view = eventView(game);
+  if (view) {
+    const ev = game.event!;
+    const c = game.columns[ev.column];
+    showBattle(`${c.name} at ${graph.site(ev.site).name}`, view.title, `<p>${view.text}</p>`,
+      view.choices.map((ch, i) => `<button class="big${i === 0 ? " primary" : ""}" id="e-${i}">${ch.label}: ${ch.cost}</button>`).join(""));
+    view.choices.forEach((_, i) => {
+      const b = document.getElementById(`e-${i}`);
+      if (b) b.onclick = () => { chooseEvent(game, i); render(); };
+    });
     return;
   }
   const foe = attackPreview ? canAttack(game, active) : null;
