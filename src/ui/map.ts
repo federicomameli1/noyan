@@ -566,9 +566,9 @@ export function createMap(opts: MapOptions): GameMap {
       const g = el("g", { class: "convoy-mark" }, convoyLayer);
       el("g", {}, g).innerHTML = wagon();
       const title = el("title", {}, g);
-      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent, e); });
+      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent ?? "", e, TIP_DELAY_SITE); });
       g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
-      g.addEventListener("pointerleave", () => { tip.hidden = true; });
+      g.addEventListener("pointerleave", hideTip);
       convoyGs.push({ g, title });
     }
     return convoyGs[i];
