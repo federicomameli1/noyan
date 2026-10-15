@@ -547,7 +547,7 @@ export function createMap(opts: MapOptions): GameMap {
       el("g", {}, g).innerHTML = jinBanner();
       const label = el("text", { x: 2, y: -19, "text-anchor": "middle", class: "city army-label" }, g);
       const title = el("title", {}, g);
-      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent, e, TIP_DELAY_SITE); });
+      g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent ?? "", e, TIP_DELAY_SITE); });
       g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
       g.addEventListener("pointerleave", hideTip);
       armyGs.push({ g, ring, label, title });
