@@ -155,6 +155,22 @@ export const JIN_FLOCK_SIGHT_KM = 60;
 export const RELIEF_STORES = 20;
 /** size bands of a Jin army seen from far away, men: up to `small` is small, up to `medium` medium [S] */
 export const ARMY_SIZE = { small: 2000, medium: 6000 } as const;
+/** days of food a Jin field army carries, and the most it can hold [S] */
+export const JIN_FOOD_DAYS = 20;
+/** days between convoys sent from home to an army in the field [S] */
+export const CONVOY_EVERY = 5;
+/** days of food a convoy brings [S] */
+export const CONVOY_FOOD = 10;
+/** km a day a wagon convoy makes, during the Jin marching hours [S] */
+export const CONVOY_KM_PER_DAY = 15;
+/** share of a captured convoy's food the Mongols can use as rations [S] */
+export const CONVOY_RATIONS_SHARE = 0.5;
+/** days of grain for the horses found in a captured convoy [S] */
+export const CONVOY_GRAIN_DAYS = 3;
+/** morale a Jin field army loses each day without food [S] */
+export const HUNGER_MORALE = 5;
+/** share of the foot and horse that desert each day without food [S] */
+export const HUNGER_DESERTION = 0.02;
 
 // --- battles (layer 1) ---
 // A Mongol column against a Jin army. Rules: design doc "07-regole-strato-1", section 4.
@@ -270,3 +286,43 @@ export const SLAUGHTER_SHARE = 0.5;
 export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
+
+// --- events at places (layer 1) ---
+/** share of the villages' stores the elders offer to be spared [S] */
+export const TRIBUTE_SHARE = 1 / 3;
+/** points of hostility the villages lose when the tribute is taken [S] */
+export const TRIBUTE_CALM = 10;
+/** a day by the fires recovers this much fatigue [S] */
+export const FROST_REST = 20;
+/** marching on through a hard frost costs this much condition [S] */
+export const FROST_COLD = 5;
+/** thin Jin horses the Mongols round up after a victory [S] */
+export const HERD_HORSES = 400;
+/** condition of the horses rounded up off the battlefield [S] */
+export const HERD_CONDITION = 30;
+/** hostility of the villagers below which a farmer offers to guide the column by a hidden path [S] */
+export const GUIDES_HOSTILITY = 40;
+/** chance the guide is a Jin trap [S] */
+export const GUIDES_TRAP = 0.3;
+/** km of the road the hidden path saves [S] */
+export const GUIDES_KM = 40;
+/** share of the men and horses lost in the ambush when the guide is a trap [S] */
+export const GUIDES_LOSS = 0.03;
+/** morale the ambush costs the column [S] */
+export const GUIDES_MORALE = 10;
+/** Khitan horsemen of a beaten army who ask to serve the Mongols [S] */
+export const DESERTERS_MEN = 200;
+/** and the horses they bring [S] */
+export const DESERTERS_HORSES = 400;
+/** condition of their horses, as for the ones rounded up off a battlefield [S] */
+export const DESERTERS_CONDITION = 50;
+/** morale lost when they are taken in: they are not trusted yet [S] */
+export const DESERTERS_MORALE = 5;
+/** places of the Fen valley where the winter ice can be crossed [S] */
+export const ICE_SITES: readonly string[] = ["yuanping", "xinzhou", "taiyuan", "fenzhou", "huozhou", "pingyang"];
+/** km of the road crossing the frozen Fen saves [S] */
+export const ICE_KM = 60;
+/** chance the ice breaks under part of the herd [S] */
+export const ICE_RISK = 0.1;
+/** share of the horses lost when it does [S] */
+export const ICE_LOSS = 0.02;
