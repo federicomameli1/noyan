@@ -86,6 +86,8 @@ export interface SiteState {
   grazed: number;
   /** sheep left here by a column */
   sheep: number;
+  /** sheep the allied herders here can still give */
+  herders: number;
   /** what the villages around still hold: rations, horse-days of grain, head of livestock */
   food: number;
   grain: number;
@@ -167,6 +169,9 @@ export const conditionBand = (c: number): ConditionBand => (c >= 70 ? "fat" : c 
 const graph: Graph = SCENARIO.graph;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** True for a pasture held by the Mongols: allied herders live there and give sheep for free. */
+export const hasHerders = (site: Site): boolean => site.kind === "pasture" && site.control === "mongols";
+
 function newColumn(c: ColumnSpec, at: string, sheep = 0): Column {
   const col: Column = {
     name: c.name, men: c.men, horses: c.men * c.horsesPerMan, sheep, rations: c.men * c.rationsPerMan,
@@ -181,7 +186,7 @@ export function newGame(sheep = 0): GameState {
   const c = SCENARIO.column;
   const col = newColumn(c, SCENARIO.base, sheep);
   const sites: Record<string, SiteState> = {};
-  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, ...newCountry(s) };
+  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
@@ -746,6 +751,19 @@ export function takeFlock(s: GameState, ci: number): boolean {
   return true;
 }
 
+/** Takes up to `n` sheep from the allied herders at the current site. False, changing nothing, when there are none to give. */
+export function takeFromHerders(s: GameState, ci: number, n: number): boolean {
+  const c = s.columns[ci];
+  if (!c.at || c.men <= 0) return false;
+  const st = s.sites[c.at];
+  const taken = Math.floor(Math.min(n, st.herders));
+  if (taken <= 0) return false;
+  c.sheep += taken;
+  st.herders -= taken;
+  log(s, `${c.name} takes ${taken.toLocaleString("en")} sheep from the herders at ${graph.site(c.at).name}, now ${Math.round(c.sheep).toLocaleString("en")} sheep.`);
+  return true;
+}
+
 // --- simulation ---
 
 export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
@@ -890,6 +908,7 @@ export function leaveBlockade(s: GameState, ci: number): boolean {
 
 function endOfDay(s: GameState) {
   countryDay(s);
+  for (const site of graph.sites) if (hasHerders(site)) s.sites[site.id].herders = Math.min(R.HERDERS_RESERVE, s.sites[site.id].herders + R.HERDERS_REGROW);
   const month = dateOf(s).month;
   const quality = R.PASTURE_QUALITY[month];
   for (const c of s.columns) {

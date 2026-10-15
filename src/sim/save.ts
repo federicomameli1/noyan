@@ -6,7 +6,7 @@ import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -51,7 +51,7 @@ export function readSave(data: unknown): SaveFile {
     if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition) || !isNumber(c.morale)
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");
   }
-  if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility))) fail("The save is damaged.");
+  if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders))) fail("The save is damaged.");
   // every place of the map must be there, and nothing else: a save of an older map would break the routes
   const siteIds = SCENARIO.graph.sites.map(s => s.id).sort().join();
   if (Object.keys(game.sites).sort().join() !== siteIds) fail("The save was made on a different map.");

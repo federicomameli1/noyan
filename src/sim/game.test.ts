@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { blockadeMen, dropFlock, effectivePace, forecast, leaveBlockade, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, sortieCost, step, stormCost, takeFlock, type GameState } from "./game";
-import { RATIONS_PER_SHEEP, type PaceId } from "./constants";
+import { blockadeMen, dropFlock, effectivePace, forecast, leaveBlockade, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, sortieCost, step, stormCost, takeFlock, takeFromHerders, type GameState } from "./game";
+import { HERDERS_RESERVE, RATIONS_PER_SHEEP, type PaceId } from "./constants";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
 const col = (s: GameState) => s.columns[0];
@@ -133,6 +133,49 @@ describe("food", () => {
     expect(effectivePace(col(s))).toBe("normal");
     expect(takeFlock(s, 0)).toBe(true);
     expect(col(s).sheep).toBe(3000);
+  });
+});
+
+describe("allied herders", () => {
+  it("a pasture held by the Mongols starts full, others have none", () => {
+    const s = newGame();
+    expect(s.sites.fengzhou.herders).toBe(HERDERS_RESERVE);
+    expect(s.sites["xijing-pastures"].herders).toBe(HERDERS_RESERVE);
+    expect(s.sites.datong.herders).toBe(0);
+  });
+
+  it("gives what is there, and no more once the reserve is empty", () => {
+    const s = fed("normal", 0, "fengzhou");
+    expect(takeFromHerders(s, 0, 1000)).toBe(true);
+    expect(col(s).sheep).toBe(1000);
+    expect(s.sites.fengzhou.herders).toBe(HERDERS_RESERVE - 1000);
+    // asking for more than the herders hold takes only what is left
+    expect(takeFromHerders(s, 0, 5000)).toBe(true);
+    expect(col(s).sheep).toBe(HERDERS_RESERVE);
+    expect(s.sites.fengzhou.herders).toBe(0);
+    expect(takeFromHerders(s, 0, 1000)).toBe(false);
+  });
+
+  it("grows back a little each day, up to the reserve", () => {
+    const s = fed("normal", 0, "fengzhou");
+    takeFromHerders(s, 0, 1e9);
+    expect(s.sites.fengzhou.herders).toBe(0);
+    days(s, 10);
+    expect(s.sites.fengzhou.herders).toBe(400);
+    days(s, 100);
+    expect(s.sites.fengzhou.herders).toBe(HERDERS_RESERVE);
+
+    const full = fed("normal", 0, "fengzhou");
+    days(full, 3);
+    expect(full.sites.fengzhou.herders).toBe(HERDERS_RESERVE);
+  });
+
+  it("cannot take while on a leg, away from any site", () => {
+    const s = fed("normal");
+    orderMarch(s, 0, "huairen");
+    for (let i = 0; i < 9; i++) step(s);
+    expect(col(s).at).toBeNull();
+    expect(takeFromHerders(s, 0, 100)).toBe(false);
   });
 });
 
