@@ -93,7 +93,7 @@ SCENARIO.flockOptions.forEach(n => {
 $("begin").onclick = () => {
   started = true;
   $("start").hidden = true;
-  toast({ hour: 0, text: "Click a place on the map to march there." });
+  toast({ hour: 0, text: "Click a place on the map to march there." }, true);
   render();
 };
 
@@ -118,7 +118,11 @@ document.addEventListener("keydown", e => {
   if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
   const n = Number(e.key);
   if (n >= 1 && n <= SPEEDS.length) { speed = SPEEDS[n - 1]; setPlaying(true); }
-  if (e.key === "Escape") { closePlace(); toggleMenu(false); }
+  if (e.key === "Escape") {
+    // Esc closes what is open, or opens the menu when nothing is
+    const open = !menu.hidden || !info.hidden || journal.classList.contains("open");
+    closePlace(); toggleJournal(false); toggleMenu(!open);
+  }
 });
 // map layers work before the campaign starts too
 document.addEventListener("keydown", e => {
@@ -127,14 +131,29 @@ document.addEventListener("keydown", e => {
   if (b) b.click();
 });
 
-// --- menu: layers, legend, journal ---
+// --- menu: saves, war aims, map symbols ---
+const journal = $("journal");
+/** a panel open on the right, or at the bottom on phones, where it covers the ledger */
+const sideOpen = () => stage.classList.toggle("side-open", !menu.hidden || !info.hidden || journal.classList.contains("open"));
 function toggleMenu(open: boolean = menu.hidden === true) {
   menu.hidden = !open;
   $("menu-btn").setAttribute("aria-expanded", String(open));
-  if (open) closePlace();
-  stage.classList.toggle("side-open", open || !info.hidden);
+  if (open) { closePlace(); toggleJournal(false); }
+  sideOpen();
 }
 $("menu-btn").onclick = () => toggleMenu();
+
+// --- journal: the last entries always in sight, all of them on demand ---
+function toggleJournal(open: boolean = !journal.classList.contains("open")) {
+  journal.classList.toggle("open", open);
+  $("journal-toggle").setAttribute("aria-expanded", String(open));
+  $("journal-btn").setAttribute("aria-expanded", String(open));
+  $("journal-more").textContent = open ? "fewer" : "all entries";
+  if (open) { menu.hidden = true; $("menu-btn").setAttribute("aria-expanded", "false"); }
+  sideOpen();
+}
+$("journal-toggle").onclick = () => toggleJournal();
+$("journal-btn").onclick = () => toggleJournal();
 
 // --- saves: an automatic one every game day, a manual one, and files ---
 const loadBtn = $<HTMLButtonElement>("load");
@@ -156,7 +175,7 @@ function loadGame(save: SaveFile) {
   closePlace();
   setPlaying(false);
   focusColumn();
-  toast({ hour: game.hour, text: `Game loaded: ${describeSave(save)}. Press space to go on.` });
+  toast({ hour: game.hour, text: `Game loaded: ${describeSave(save)}. Press space to go on.` }, true);
 }
 const confirmLoad = () => !started || game.over || confirm("Load the saved game? The campaign in progress is lost since its last save.");
 
@@ -222,14 +241,14 @@ function selectSite(s: Site, desc?: string) {
   map.selectSite(s.id);
   info.hidden = false;
   toggleMenu(false);
-  stage.classList.add("side-open");
+  toggleJournal(false);
   render();
 }
 function closePlace() {
   selected = null;
   info.hidden = true;
   map.selectSite(null);
-  stage.classList.toggle("side-open", !menu.hidden);
+  sideOpen();
   renderPreview();
 }
 
@@ -410,14 +429,24 @@ function grassText(density: number) {
 
 // --- column panel ---
 const level = (v: number, warn: number, bad: number) => (v <= bad ? "bad" : v <= warn ? "warn" : "ok");
-function bar(label: string, value: number, cls: string, text: string, open = `<div class="bar">`, close = "</div>") {
-  return `${open}<span>${label}</span><i><b class="${cls}" style="width:${Math.max(2, Math.min(100, value))}%"></b></i><span>${text}</span>${close}`;
+const pct = (v: number) => Math.max(2, Math.min(100, v));
+/** a gauge hatched in ink; a cinnabar notch marks where the forecast puts it */
+const meter = (value: number, cls: string, notch?: number) =>
+  `<i class="meter"><b class="${cls}" style="width:${pct(value)}%"></b>${notch === undefined ? "" : `<b class="notch" style="left:${pct(notch)}%"></b>`}</i>`;
+function bar(label: string, value: number, cls: string, text: string, open = `<div class="bar">`, close = "</div>", notch?: number) {
+  return `${open}<span>${label}</span>${meter(value, cls, notch)}<span>${text}</span>${close}`;
 }
 
 const BAND = { fat: "fat", fit: "fit", thin: "thin", exhausted: "exhausted" };
 /** the column panel can fold to one line, which matters on phones where it would cover half the map */
 let folded = window.matchMedia("(max-width: 640px)").matches;
 $("column").classList.toggle("collapsed", folded);
+/** what each pace costs, written on its button */
+const PACE_COST: Record<PaceId, string> = {
+  grazing: "15 km, horses eat",
+  normal: "35 km a day",
+  forced: "55 km, then they tire",
+};
 const PACE_HINT: Record<PaceId, string> = {
   grazing: "15 km a day, horses eat on the way",
   normal: "35 km a day, the everyday march",
@@ -449,7 +478,7 @@ function treasuryText(c: Column) {
   const parts = [`${fmt(game.treasury)} goods`];
   if (onRoad > 0) parts.push(`${fmt(onRoad)} remounts on the road`);
   if (here > 0) parts.push(`${fmt(here)} remounts waiting here`);
-  return `<p class="note">${parts.join(" · ")}</p>`;
+  return `<p class="note treasury">Treasury: ${parts.join(", ")}</p>`;
 }
 
 /** The button that calls the remounts, when the column stands where the herds can graze. */
@@ -474,14 +503,28 @@ function splitButtons(c: Column) {
   return `<div class="seg" role="group" aria-label="Divide the column">${buttons.join("")}</div>`;
 }
 
+/** what a column is doing, in a few words */
+function statusOf(c: Column) {
+  const dest = c.route.at(-1) ?? c.leg?.to;
+  return c.foraging ? `${c.foraging.kind === "plunder" ? "Plundering" : "Requisitioning from"} the villages around ${graph.site(c.at!).name}` : c.siege ? `Besieging ${graph.site(c.siege).name}` : c.waiting ? `Halted: a Jin army bars the road at ${graph.site(c.waiting).name}` : c.at
+    ? (c.route.length && !c.halted ? `Leaving ${graph.site(c.at).name} for ${graph.site(dest!).name}` : `Camped at ${graph.site(c.at).name}`)
+    : c.halted ? `Halted on the way to ${graph.site(c.leg!.to).name}` : `Marching to ${graph.site(dest!).name}`;
+}
+
+/** one line of the ledger: the column's seal, what it does, its horses and its food */
+function ledgerRow(x: Column, i: number) {
+  const food = foodDays(x);
+  return `<button class="row" data-col="${i}" aria-pressed="${i === active}">
+    <span class="seal" aria-hidden="true">${x.name[0]}</span>
+    <span><span class="who">${x.name}</span><span class="doing">${statusOf(x)}</span></span>
+    <span class="mini" title="Horses and food">${meter(x.condition, level(x.condition, 40, 20))}${meter((food / 30) * 100, level(food, 7, 3))}</span>
+  </button>`;
+}
+
 function renderColumn() {
   const c = col();
   const camp = campSite(c);
-  const dest = c.route.at(-1) ?? c.leg?.to;
   const besieged = c.siege ? game.cities[c.siege] : null;
-  const status = c.foraging ? `${c.foraging.kind === "plunder" ? "Plundering" : "Requisitioning from"} the villages around ${graph.site(c.at!).name}` : c.siege ? `Besieging ${graph.site(c.siege).name}` : c.waiting ? `Halted: a Jin army bars the road at ${graph.site(c.waiting).name}` : c.at
-    ? (c.route.length && !c.halted ? `Leaving ${graph.site(c.at).name} for ${graph.site(dest!).name}` : `Camped at ${graph.site(c.at).name}`)
-    : c.halted ? `Halted on the way to ${graph.site(c.leg!.to).name}` : `Marching to ${graph.site(dest!).name}`;
   const pace = effectivePace(c);
   const food = foodDays(c);
   const perMan = c.horses / Math.max(1, c.men);
@@ -489,30 +532,33 @@ function renderColumn() {
   const flockHere = c.at ? game.sites[c.at].sheep : 0;
   const herdersHere = c.at ? game.sites[c.at].herders : 0;
   const blockade = blockadeMen(game, c);
-  const changed = setHTML($("column"), `<button class="fold icon" aria-label="${folded ? "Show details" : "Hide details"}" aria-expanded="${!folded}">${folded ? "▴" : "▾"}</button>
-    ${game.columns.length > 1 ? `<div class="seg tabs" role="group" aria-label="Column">${game.columns.map((x, i) => `<button data-col="${i}" aria-pressed="${i === active}">${x.name}</button>`).join("")}</div>` : ""}
-    <h2>${c.name}</h2>
-    <p class="status">${status}</p>
-    <p class="compact">${besieged ? `Siege ${Math.floor(besieged.progress)}% · ` : ""}condition ${c.condition.toFixed(0)} · fatigue ${c.fatigue.toFixed(0)} · food ${Math.floor(food)} days · ${fmt(c.horses)} horses</p>
+  // where the horses will be in a week at this pace
+  const week = cachedForecast(null, OUTLOOK_DAYS)?.days[6]?.condition;
+  const changed = setHTML($("column"), `<div class="army-head"><span>Your army, ${game.columns.length === 1 ? "one column" : `${game.columns.length} columns`}</span>
+      <button class="fold" aria-expanded="${!folded}">${folded ? "show details" : "hide details"}</button></div>
+    <div class="army" role="group" aria-label="Columns">${game.columns.map(ledgerRow).join("")}</div>
+    <p class="compact">${besieged ? `Siege ${Math.floor(besieged.progress)}%, ` : ""}${fmt(c.men)} men, ${fmt(c.horses)} horses, condition ${c.condition.toFixed(0)}, fatigue ${c.fatigue.toFixed(0)}, food ${Math.floor(food)} days</p>
     <div class="stats">
       <div><b>${fmt(c.men)}</b><span>men</span></div>
       <div><b>${fmt(c.horses)}</b><span>horses</span></div>
       <div><b>${fmt(c.sheep)}</b><span>sheep</span></div>
-      <div><b>${perMan.toFixed(1)}</b><span>per man</span></div>
+      <div><b>${perMan.toFixed(1)}</b><span>horses a man</span></div>
     </div>
+    <div class="gauges">
     ${bar("Condition", c.condition, level(c.condition, 40, 20), `${BAND[conditionBand(c.condition)]} ${showWhy ? "▴" : "▾"}`,
-      `<button class="bar why" aria-expanded="${showWhy}" title="Why the condition changes">`, "</button>")}
-    ${isArmy(c) ? "" : `<p class="note t-bad">The column is broken: with ${fmt(c.men)} men it cannot besiege a city or face an army.</p>`}
+      `<button class="bar why" aria-expanded="${showWhy}" title="Why the condition changes. The red notch is where it will be in a week at this pace">`, "</button>", week)}
     ${!showWhy ? "" : c.lastDay ? whyText(c.lastDay) : `<p class="why-list">The horses gain or lose condition each night, from the grass they found and the road they covered.</p>`}
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
     ${besieged ? bar("Siege", besieged.progress, isRelieved(game, c.siege!) ? "bad" : "ok", isRelieved(game, c.siege!) ? "stalled" : `${siegeDays(game, c, c.siege!)} days`) : ""}
-    ${c.engineers || c.grain > 0 ? `<p class="note">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(" · ")}</p>` : ""}
+    </div>
+    ${isArmy(c) ? "" : `<p class="note t-bad">The column is broken: with ${fmt(c.men)} men it cannot besiege a city or face an army.</p>`}
+    ${c.engineers || c.grain > 0 ? `<p class="note extras">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(", ")}</p>` : ""}
     ${treasuryText(c)}
     <div class="orders">
-      <div class="seg" role="group" aria-label="Pace">
-        ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}
+      <div class="pace" role="group" aria-label="Pace">
+        ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}<small>${PACE_COST[p]}</small></button>`).join("")}
       </div>
       <div class="seg">
         ${canBesiege(game, c) ? `<button id="siege" class="primary">Lay siege</button>` : ""}
@@ -528,7 +574,7 @@ function renderColumn() {
       </div>` : ""}
       ${splitButtons(c)}
     </div>
-    <p class="outlook">${outlookText()}</p>
+    <blockquote class="says">${outlookText()}<cite>Chief of the herds</cite></blockquote>
     <p class="hint">${c.sheep > 0 ? "The flock sets the pace. Leave it somewhere to march faster." : PACE_HINT[pace]}${speedFactor(c) < 1 ? `. Tired or thin horses: ${Math.round(PACES[pace].marchHours * PACES[pace].kmPerHour * speedFactor(c))} km a day.` : ""}</p>`);
   if (!changed) return;
   const panel = $("column");
@@ -564,7 +610,7 @@ let logSeen = 1;
 function renderLog() {
   if (game.log.length === Number($("log").dataset.count)) return;
   $("log").dataset.count = String(game.log.length);
-  $("log").innerHTML = game.log.slice().reverse().map(l => `<li class="${l.kind ?? ""}"><span>${shortDate(l.hour)}</span>${l.text}</li>`).join("");
+  $("log").innerHTML = game.log.slice().reverse().map(l => `<li class="${l.kind ?? ""}"><span>${shortDate(l.hour)}</span><p>${l.text}</p></li>`).join("");
   // new entries become notices; an arrival or an alert pauses the game so the player can react
   let arrived = false;
   for (const l of game.log.slice(logSeen)) {
@@ -577,10 +623,11 @@ function renderLog() {
   const c = col();
   if (arrived && c.at && canBesiege(game, c) && selected?.id !== c.at) selectSite(graph.site(c.at));
 }
-function toast(l: LogEntry) {
+/** a notice under the top bar; where the journal is in sight, only urgent ones and those marked `keep` show */
+function toast(l: LogEntry, keep = false) {
   const box = $("toasts");
   const t = document.createElement("div");
-  t.className = `toast ${l.kind ?? ""}`;
+  t.className = `toast ${l.kind ?? ""}${keep ? " keep" : ""}`;
   t.textContent = l.text;
   box.append(t);
   while (box.children.length > 3) box.firstElementChild!.remove();
@@ -622,10 +669,33 @@ function renderAims() {
     return `<li class="${met ? "met" : ""}"><b>${a.name}</b><span class="st">${a.status(game)}</span></li>`;
   }).join("");
   $("aims").innerHTML = order + honours;
-  $("aim-chip").innerHTML = aim
-    ? `<b>${aim.name}</b> · ${aim.status(game)} · ${t.left} days`
-    : `the khan is ${game.dispatchesMissed > 0 ? "not satisfied" : "satisfied"}`;
-  $("favour").textContent = `The khan's favour: ${game.favour} — ${favourText(game)}.`;
+  $("favour").textContent = `The khan's favour: ${game.favour}, ${favourText(game)}.`;
+}
+
+// --- alerts: what is coming, pinned beside the date, with the khan's order ---
+function renderAlerts() {
+  const notes: string[] = [];
+  if (started && !game.over) {
+    const c = col();
+    const who = game.columns.length > 1 ? `${c.name}: ` : "";
+    const f = cachedForecast(null, OUTLOOK_DAYS);
+    const now = conditionBand(c.condition);
+    const hungry = f?.days.find(d => d.starving);
+    const worse = f?.days.find(d => BAND_RANK[d.band] < BAND_RANK[now] && d.band !== "fit");
+    if (c.reported.starving) notes.push(`<button class="pin bad" data-alert="column">${who}the men are <b>starving</b></button>`);
+    else if (hungry) notes.push(`<button class="pin${hungry.day <= 5 ? " bad" : ""}" data-alert="column">${who}food runs out in <b>${days(hungry.day)}</b></button>`);
+    if (worse) notes.push(`<button class="pin${worse.band === "exhausted" ? " bad" : ""}" data-alert="column">${who}horses ${worse.band} in <b>${days(worse.day)}</b></button>`);
+    const aim = currentAim(game);
+    if (aim) {
+      const t = dispatchTime(game);
+      notes.push(`<button class="pin aim${t.left <= 10 ? " bad" : ""}" data-alert="aims" title="${aim.desc}">${aim.name}: <b>${t.left} days</b> left</button>`);
+    }
+  }
+  if (setHTML($("alerts"), notes.join(""))) {
+    $("alerts").querySelectorAll<HTMLButtonElement>("[data-alert]").forEach(b => {
+      b.onclick = () => (b.dataset.alert === "aims" ? toggleMenu(true) : focusColumn());
+    });
+  }
 }
 
 function render() {
@@ -633,7 +703,7 @@ function render() {
   const d = dateOf(game);
   $("date").textContent = formatDate(d);
   if (game.over && $("end").hidden) showEnd();
-  $("clock-hour").textContent = game.over ? "The campaign is over" : `${String(d.hour).padStart(2, "0")}:00 · ${playing ? `${speed}× speed` : "paused"}`;
+  $("clock-hour").textContent = game.over ? "The campaign is over" : `${String(d.hour).padStart(2, "0")}:00, ${playing ? `${speed}× speed` : "paused"}`;
   $("play").textContent = playing ? "❚❚" : "▶";
   $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
@@ -646,6 +716,7 @@ function render() {
   renderPlace();
   renderBattle();
   renderAims();
+  renderAlerts();
 }
 
 function renderColumns() {
@@ -762,8 +833,8 @@ function renderBattle() {
     showBattle(`${c.name} at ${site.name}`, `The ${a.name} calls on ${site.name}`,
       `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} stand before the gates of ${site.name}. `
         + `Behind the walls your men are worth ${times(walls)} what they are worth in the open.</p>${oddsHTML(c, a, 0, walls)}`,
-      `<button class="primary big" id="b-fight" ${canHold ? "" : "disabled"}>${canHold ? "Hold the walls" : `Hold the walls (${fmt(c.men)} men is not an army)`}</button>
-      <button class="big" id="b-surrender">Give the town up</button>`);
+      `<button class="primary big" id="b-fight" ${canHold ? "" : "disabled"}>Hold the walls${canHold ? "" : `<small>${fmt(c.men)} men is not an army</small>`}</button>
+      <button class="big" id="b-surrender">Give the town up<small>the Jin take it back</small></button>`);
     $("b-fight").onclick = () => { orderFight(game); render(); };
     $("b-surrender").onclick = () => { orderSurrender(game); render(); };
     return;
@@ -773,8 +844,8 @@ function renderBattle() {
     const city = game.cities[t.site], name = graph.site(t.site).name, helpers = reliefHelpers(game);
     showBattle(`${c.name} before ${name}`, `The ${a.name} has come to relieve ${name}`,
       `<p>${fmt(a.foot)} foot and ${fmt(a.horse)} horse stand before the siege lines, and ${fmt(helpers)} men of the garrison make ready to sally behind us.</p>${oddsHTML(c, a, helpers)}`,
-      `<button class="primary big" id="b-fight">Fight them, with the garrison at our backs</button>
-      <button class="big" id="b-refuse">Lift the siege: ${Math.round(city.progress)}% of the work is lost, and they bring ${name} 20 days of food</button>`);
+      `<button class="primary big" id="b-fight">Fight them<small>with the garrison at our backs</small></button>
+      <button class="big" id="b-refuse">Lift the siege<small>${Math.round(city.progress)}% of the work is lost, and they bring ${name} 20 days of food</small></button>`);
     $("b-fight").onclick = () => { orderFight(game); render(); };
     $("b-refuse").onclick = () => { orderRefuse(game); render(); };
     return;
@@ -787,7 +858,7 @@ function renderBattle() {
     showBattle(`${c.name} at ${graph.site(t.site).name}`, `The ${a.name} is upon us`,
       `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} have caught up with ${c.name}.</p>${oddsHTML(c, a)}`,
       `<button class="primary big" id="b-fight">Stand and fight</button>
-      ${to ? `<button class="big" id="b-refuse">Ride away to ${graph.site(to).name} at a forced march${costs ? `, ${costs}` : ""}</button>` : `<p class="note">Riding away is not possible: ${block}</p>`}`);
+      ${to ? `<button class="big" id="b-refuse">Ride away to ${graph.site(to).name}<small>at a forced march${costs ? `, ${costs}` : ""}</small></button>` : `<p class="note">Riding away is not possible: ${block}</p>`}`);
     $("b-fight").onclick = () => { orderFight(game); render(); };
     const r = document.getElementById("b-refuse");
     if (r) r.onclick = () => { orderRefuse(game); setPlaying(true); };
@@ -817,7 +888,7 @@ function renderBattle() {
     // the first choice that can be taken is the one the button highlights
     const first = Math.max(0, view.choices.findIndex(ch => !ch.disabled));
     showBattle(`${c.name} at ${graph.site(ev.site).name}`, view.title, `<p>${view.text}</p>`,
-      view.choices.map((ch, i) => `<button class="big${i === first ? " primary" : ""}" id="e-${i}"${ch.disabled ? " disabled" : ""}>${ch.label}: ${ch.cost}</button>`).join(""));
+      view.choices.map((ch, i) => `<button class="big${i === first ? " primary" : ""}" id="e-${i}"${ch.disabled ? " disabled" : ""}>${ch.label}<small>${ch.cost}</small></button>`).join(""));
     view.choices.forEach((_, i) => {
       const b = document.getElementById(`e-${i}`);
       if (b) b.onclick = () => { chooseEvent(game, i); render(); };
@@ -862,7 +933,7 @@ function showEnd() {
     <dt>Horses</dt><dd>${fmt(horses)} of ${fmt(horsesAtStart)}</dd>
     <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd>
     <dt>Goods taken</dt><dd>${fmt(goods)}</dd>
-    <dt>The khan's favour</dt><dd>${game.favour} — ${favourText(game)}</dd>
+    <dt>The khan's favour</dt><dd>${game.favour}, ${favourText(game)}</dd>
     ${orders}
     ${aims}</dl>`);
   $("end").hidden = false;
@@ -914,8 +985,7 @@ render();
 
 function legend(layer: Layer) {
   const C = cssVar;
-  const sw = (c: string) => `<svg width="14" height="14" aria-hidden="true"><rect width="14" height="14" rx="2" fill="${c}"/></svg>`;
-  $("leg-title").textContent = "Legend · " + ($("layers").querySelector(`[data-layer="${layer}"]`)?.firstChild?.textContent ?? "").toLowerCase();
+  const sw = (c: string) => `<svg width="16" height="11" aria-hidden="true"><rect x=".5" y=".5" width="15" height="10" fill="${c}" stroke="${C("--ink-soft")}"/></svg>`;
   const target = (type: keyof typeof TYPE_NAME, taken = false) =>
     `<svg width="18" height="18" viewBox="-10 -12 20 22" aria-hidden="true"><g class="target${taken ? " taken" : ""}">${targetSymbol(type)}</g></svg>`;
   const symbols = `<dt>${target("town")}</dt><dd>${TARGET_TEXT.town}</dd>
@@ -930,12 +1000,14 @@ function legend(layer: Layer) {
     <dt><svg width="18" height="14" aria-hidden="true"><path d="M1,7H17" stroke="${C("--ink")}" stroke-opacity=".7" stroke-dasharray="1 4" stroke-linecap="round"/></svg></dt><dd>Mountain path</dd>
     <dt><svg width="18" height="18" viewBox="-18 -26 36 36" aria-hidden="true">${helmet()}</svg></dt><dd>Muqali's column</dd>
     <dt><svg width="18" height="18" viewBox="-12 -16 24 28" aria-hidden="true"><g class="army-mark">${jinBanner()}</g></svg></dt><dd>Jin army: the closer your scouts, the more you know. Faded where it was last seen</dd>`;
-  let items = "";
+  // the colours of the layer shown sit under the layer buttons; the symbols are in the menu
+  let items: [string, string][] = [];
   if (layer === "pasture") {
-    items = `<dt>${sw(mix(C("--p-low"), C("--p-high"), 0.15))}</dt><dd>Poor pasture</dd><dt>${sw(mix(C("--p-low"), C("--p-high"), 0.5))}</dt><dd>Average</dd><dt>${sw(C("--p-high"))}</dt><dd>Rich pasture</dd>`;
+    items = [[mix(C("--p-low"), C("--p-high"), 0.15), "poor pasture"], [mix(C("--p-low"), C("--p-high"), 0.5), "average"], [C("--p-high"), "rich"]];
   } else if (layer !== "map") {
     const prefix = { terrain: "--t-", political: "--pol-", diplomatic: "--dip-" }[layer];
-    items = Object.entries(LABELS[layer]).map(([k, v]) => `<dt>${sw(C(prefix + k))}</dt><dd>${v}</dd>`).join("");
+    items = Object.entries(LABELS[layer]).map(([k, v]) => [C(prefix + k), v.toLowerCase()]);
   }
-  $("legend").innerHTML = items + symbols;
+  $("legend-strip").innerHTML = items.length ? items.map(([c, v]) => `<span>${sw(c)}${v}</span>`).join("") : "<span>the map without colours</span>";
+  $("legend").innerHTML = symbols;
 }

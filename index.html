@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Noyan</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400;1,500&display=swap" />
   </head>
   <body class="at-title">
     <div class="title" id="title">
@@ -27,26 +27,38 @@
       <img class="plate" src="./images/pursuit-diez.webp" alt="Mongol horse archers in lamellar armour pursue their enemies, painted on paper" title="Pursuit by Mongol warriors. Ilkhanid Iran, early 14th century. Diez Albums, Staatsbibliothek zu Berlin." width="1100" height="875" />
     </div>
 
+    <!-- the ragged ink outline of every paper slip on the map -->
+    <svg width="0" height="0" class="defs" aria-hidden="true">
+      <filter id="rough" x="-2%" y="-2%" width="104%" height="104%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="2.2" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
+
     <main class="stage" id="stage">
       <div class="tip" id="tip" hidden></div>
 
-      <header class="hud topbar">
-        <b class="brand">Noyan</b>
-        <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
-        <span class="aim-chip" id="aim-chip"></span>
-        <div class="seg" role="group" aria-label="Time">
-          <button id="play" class="icon" aria-label="Pause">❚❚</button>
-          <span class="seg" id="speeds"></span>
+      <header class="topbar">
+        <div class="hud slip when">
+          <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
+          <div class="seg" role="group" aria-label="Time">
+            <button id="play" class="icon" aria-label="Pause">❚❚</button>
+            <span class="seg" id="speeds"></span>
+          </div>
         </div>
-        <button id="menu-btn" class="icon" aria-label="Legend and journal" aria-expanded="false">☰</button>
+        <div class="alerts" id="alerts"></div>
+        <div class="hud slip menu-slip">
+          <button id="journal-btn" class="journal-btn" aria-expanded="false">Journal</button>
+          <button id="menu-btn" aria-label="Campaign menu" aria-expanded="false">Menu<kbd>Esc</kbd></button>
+        </div>
       </header>
 
       <div class="toasts" id="toasts" aria-live="polite"></div>
 
-      <aside class="hud panel column" id="column" aria-label="Column"></aside>
-      <aside class="hud panel place" id="info" aria-label="Selected place" hidden></aside>
+      <aside class="hud slip panel ledger" id="column" aria-label="Your army"></aside>
+      <aside class="hud slip panel place" id="info" aria-label="Selected place" hidden></aside>
 
-      <div class="hud panel menu" id="menu" hidden>
+      <div class="hud slip panel menu" id="menu" hidden>
         <h3>Campaign</h3>
         <div class="saves">
           <button id="save">Save</button>
@@ -59,28 +71,34 @@
         <h3>War aims</h3>
         <p class="note" id="favour"></p>
         <ul class="aims" id="aims"></ul>
-        <h3 id="leg-title">Legend</h3>
+        <h3>Map symbols</h3>
         <dl id="legend"></dl>
-        <h3>Journal</h3>
+      </div>
+
+      <section class="hud slip journal" id="journal" aria-label="Journal">
+        <button class="journal-head" id="journal-toggle" aria-expanded="false"><span>Journal</span><em id="journal-more">all entries</em></button>
         <ol class="log" id="log"></ol>
+      </section>
+
+      <div class="hud slip key" id="key">
+        <div class="layers seg" id="layers" role="group" aria-label="Map layer">
+          <button data-layer="map" data-key="q" aria-pressed="false" title="Plain map (Q)">Plain<kbd>Q</kbd></button>
+          <button data-layer="terrain" data-key="w" aria-pressed="false" title="Terrain (W)">Terrain<kbd>W</kbd></button>
+          <button data-layer="pasture" data-key="e" aria-pressed="true" title="Pasture (E)">Pasture<kbd>E</kbd></button>
+          <button data-layer="political" data-key="r" aria-pressed="false" title="Political (R)">Political<kbd>R</kbd></button>
+          <button data-layer="diplomatic" data-key="t" aria-pressed="false" title="Diplomatic (T)">Diplomacy<kbd>T</kbd></button>
+        </div>
+        <div class="legend-strip" id="legend-strip"></div>
       </div>
 
-      <div class="hud layers seg" id="layers" role="group" aria-label="Map layer">
-        <button data-layer="map" data-key="q" aria-pressed="false" title="Plain map (Q)">Plain<kbd>Q</kbd></button>
-        <button data-layer="terrain" data-key="w" aria-pressed="false" title="Terrain (W)">Terrain<kbd>W</kbd></button>
-        <button data-layer="pasture" data-key="e" aria-pressed="true" title="Pasture (E)">Pasture<kbd>E</kbd></button>
-        <button data-layer="political" data-key="r" aria-pressed="false" title="Political (R)">Political<kbd>R</kbd></button>
-        <button data-layer="diplomatic" data-key="t" aria-pressed="false" title="Diplomatic (T)">Diplomacy<kbd>T</kbd></button>
-      </div>
-
-      <div class="zoom">
+      <div class="hud slip zoom">
         <button id="zin" class="icon" aria-label="Zoom in">+</button>
         <button id="zout" class="icon" aria-label="Zoom out">−</button>
         <button id="zreset" class="icon" aria-label="Back to the column" style="font-size: 13px">⌖</button>
       </div>
 
       <div class="modal" id="start">
-        <div class="hud panel card">
+        <div class="hud slip panel card">
           <span class="label">Into Shanxi, 1218</span>
           <h1>The war in the north</h1>
           <p>Genghis Khan has gone west and left Muqali to fight the Jin. Take his column from Datong across the mountain passes and capture Taiyuan before spring, without losing the horses on the way. The war does not end there: the khan has more orders, and the Jin will come north to take back what you have won.</p>
@@ -101,7 +119,7 @@
         </div>
       </div>
       <div class="modal" id="battle" hidden>
-        <div class="hud panel card battle-card" role="dialog" aria-labelledby="battle-title">
+        <div class="hud slip panel card battle-card" role="dialog" aria-labelledby="battle-title">
           <span class="label" id="battle-label"></span>
           <h1 id="battle-title"></h1>
           <div id="battle-body"></div>
@@ -109,7 +127,7 @@
         </div>
       </div>
       <div class="modal" id="end" hidden>
-        <div class="hud panel card">
+        <div class="hud slip panel card">
           <span class="label">End of the campaign</span>
           <h1 id="end-title"></h1>
           <div id="end-body"></div>
