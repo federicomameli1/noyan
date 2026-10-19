@@ -295,6 +295,18 @@ export const AIM_ROSTER = 2000;
 /** horses for every man when the campaign is over [S] */
 export const AIM_HORSES_PER_MAN = 2;
 
+// --- booty and remounts (layer 1) ---
+/** goods a fallen town holds for every man of its garrison [S] */
+export const BOOTY_PER_MAN = 2;
+/** goods a single horse costs [S] */
+export const HORSE_PRICE = 20;
+/** days the khan's remount herds take to bring the horses [S] */
+export const REMOUNT_DAYS = 3;
+/** most horses one call can bring [S] */
+export const REMOUNT_MAX = 1000;
+/** hostility the countryside feels when a town is sacked [S] */
+export const SACK_HOSTILITY = 15;
+
 // --- events at places (layer 1) ---
 /** share of the villages' stores the elders offer to be spared [S] */
 export const TRIBUTE_SHARE = 1 / 3;

@@ -85,7 +85,7 @@ export function cancelForage(s: GameState, c: Column) {
 }
 
 /** Raises the hostility of a place, and half as much in the places around it: word travels. */
-function anger(s: GameState, id: string, by: number) {
+export function anger(s: GameState, id: string, by: number) {
   const raise = (x: string, v: number) => { if (population(graph.site(x))) s.sites[x].hostility = Math.min(100, s.sites[x].hostility + v); };
   raise(id, by);
   for (const n of graph.neighbours(id)) raise(n.to, by * R.HOSTILITY_SPILL);

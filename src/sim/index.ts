@@ -9,6 +9,7 @@ export * from "./scenario";
 export * from "./game";
 export * from "./jin";
 export * from "./battle";
+export * from "./booty";
 export * from "./country";
 export * from "./events";
 export * from "./goals";

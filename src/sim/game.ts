@@ -8,6 +8,7 @@ import { luck, randomStep, resolveBattle, strength, type BattleInput, type Battl
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
 import { decisiveAimMet } from "./goals";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
+import { bootyOf, stepBooty } from "./booty";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
@@ -92,6 +93,8 @@ export interface SiteState {
   sheep: number;
   /** sheep the allied herders here can still give */
   herders: number;
+  /** remounts waiting here for a column to take them */
+  remounts: number;
   /** what the villages around still hold: rations, horse-days of grain, head of livestock */
   food: number;
   grain: number;
@@ -116,6 +119,8 @@ export interface CityState {
   taken: boolean;
   /** the hour the city fell, or null while it stands */
   takenAt: number | null;
+  /** goods the town still holds, to be sacked */
+  booty: number;
 }
 
 export interface LogEntry {
@@ -135,6 +140,10 @@ export interface GameState {
   convoys: Convoy[];
   /** days since convoys were last sent out */
   convoyDay: number;
+  /** goods the army holds: they buy remounts */
+  treasury: number;
+  /** remounts on the road, from the khan's herds */
+  remounts: RemountOrder[];
   sites: Record<string, SiteState>;
   cities: Record<string, CityState>;
   log: LogEntry[];
@@ -161,6 +170,13 @@ export interface PendingEvent {
   id: EventId;
   column: number;
   site: string;
+  hour: number;
+}
+
+/** Remounts called from the khan's herds: they reach the place after `hour`. */
+export interface RemountOrder {
+  site: string;
+  horses: number;
   hour: number;
 }
 
@@ -210,13 +226,13 @@ export function newGame(sheep = 0): GameState {
   const c = SCENARIO.column;
   const col = newColumn(c, SCENARIO.base, sheep);
   const sites: Record<string, SiteState> = {};
-  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, ...newCountry(s) };
+  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, remounts: 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
-    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null };
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0 };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
@@ -482,6 +498,7 @@ export function spoils(c: Column, city: CityState, stormed: boolean) {
     engineers: rules.engineers && !c.engineers,
     recruits: stormed ? 0 : Math.round(city.garrison * rules.recruits),
     opensPass: rules.blocks,
+    booty: bootyOf(city.garrison),
   };
 }
 
@@ -491,6 +508,7 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   city.taken = true;
   city.takenAt = s.hour;
   city.stores = 0;
+  city.booty = got.booty;
   cityFalls(s, id);
   for (const o of s.columns) if (o.siege === id) o.siege = null;
   c.rations += got.rations;
@@ -500,6 +518,7 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   if (got.grain >= 1) gains.push(`${Math.round(got.grain)} days of grain for the horses`);
   if (got.engineers) { c.engineers = true; gains.push("engineers for the next sieges"); }
   if (got.recruits) gains.push(`${got.recruits.toLocaleString("en")} men from the garrison, on foot`);
+  if (got.booty > 0) gains.push(`${got.booty.toLocaleString("en")} goods to sack`);
   const opened = got.opensPass ? " The road through the pass is open." : "";
   log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.${opened}`, "arrival");
   if (decisiveAimMet(s)) {
@@ -807,6 +826,7 @@ export function step(s: GameState) {
   const hourOfDay = dateOf(s).hour;
   for (const c of s.columns) { stepForage(s, c); stepColumn(s, c, hourOfDay); }
   stepJin(s, hourOfDay);
+  stepBooty(s);
   checkEvents(s);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);

@@ -1,7 +1,7 @@
 import "./style.css";
 import {
-  HERDERS_REGROW, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, columnPosition, conditionBand, dateOf, distanceKm, dropFlock, effectivePace,
-  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, orderForage, population, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  HERDERS_REGROW, HORSE_PRICE, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, columnPosition, conditionBand, dateOf, distanceKm, dropFlock, effectivePace,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, mongolGround, orderForage, orderRemounts, orderSack, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -248,6 +248,7 @@ function spoilsText(c: Column, city: CityState) {
   if (got.engineers) parts.push("engineers");
   if (got.recruits) parts.push(`${fmt(got.recruits)} men if starved out`);
   if (got.opensPass) parts.push("an open pass");
+  if (got.booty > 0) parts.push(`${fmt(got.booty)} goods to sack`);
   return parts.join(", ");
 }
 const days = (d: number) => (d < 1 ? "less than a day" : `about ${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"}`);
@@ -343,6 +344,7 @@ function renderPlace() {
       <dt>Walls</dt><dd>${city.walls >= 4 ? "Very strong" : city.walls >= 3 ? "Strong" : city.walls >= 2 ? "Fair" : "Weak"}</dd>
       <dt>Stores</dt><dd>${Math.ceil(city.stores)} days</dd>
       <dt>Spoils</dt><dd>${spoilsText(c, city)}</dd>` : ""}
+      ${city?.taken ? `<dt>Goods</dt><dd>${city.booty > 0 ? `${fmt(city.booty)} left to sack` : "already sacked"}</dd>` : ""}
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
@@ -354,6 +356,7 @@ function renderPlace() {
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
     ${started && foe?.at === s.id ? `<button class="primary" id="attack">Attack the ${foe.name}</button>` : ""}
     ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
+    ${started && here && city?.taken && city.booty > 0 ? `<button class="primary" id="sack">Sack the town: ${fmt(city.booty)} goods</button>` : ""}
     ${started && here ? forageButtons(c) : ""}
     ${started && here && c.siege === s.id && city && sallyThreat(game, c) ? `<p class="note t-bad" style="margin-top:8px">The siege is weak: ${fmt(sallyMen(game, c))} men of the garrison may sally against it at the end of the day.</p>` : ""}
     ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
@@ -361,6 +364,7 @@ function renderPlace() {
     info.querySelector<HTMLButtonElement>(".close")!.onclick = closePlace;
     info.querySelector<HTMLButtonElement>("#go")?.addEventListener("click", () => march(s.id));
     info.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
+    info.querySelector<HTMLButtonElement>("#sack")?.addEventListener("click", () => { orderSack(game, active); render(); });
     info.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
     info.querySelector<HTMLButtonElement>("#attack")?.addEventListener("click", () => { attackPreview = true; setPlaying(false); });
     info.querySelectorAll<HTMLButtonElement>("[data-forage]").forEach(b => { b.onclick = () => { orderForage(game, active, b.dataset.forage as ForageKind); setPlaying(true); }; });
@@ -438,6 +442,20 @@ function whyText(d: ConditionChange) {
     <dt><b>Yesterday</b></dt><dd><b>${signed(d.total)}</b></dd></dl>`;
 }
 
+/** The treasury, the remounts on the road and the ones waiting here, with the button to call more. */
+function treasuryText(c: Column) {
+  const here = c.at ? game.sites[c.at].remounts : 0;
+  const onRoad = game.remounts.reduce((n, r) => n + r.horses, 0);
+  const parts = [`${fmt(game.treasury)} goods`];
+  if (onRoad > 0) parts.push(`${fmt(onRoad)} remounts on the road`);
+  if (here > 0) parts.push(`${fmt(here)} remounts waiting here`);
+  const afford = c.at && mongolGround(game, c.at) ? remountsAffordable(game) : 0;
+  const button = afford > 0
+    ? `<div class="seg"><button id="remounts" title="The khan's herds bring the horses in ${REMOUNT_DAYS} days">Call ${fmt(afford)} remounts: ${fmt(afford * HORSE_PRICE)} goods</button></div>`
+    : "";
+  return `<p class="note">${parts.join(" · ")}</p>${button}`;
+}
+
 function renderColumn() {
   const c = col();
   const camp = campSite(c);
@@ -472,6 +490,7 @@ function renderColumn() {
     ${bar("Grass", (density / 30) * 100, level(density, 12, 6), grassText(density).split(" (")[0].toLowerCase())}
     ${besieged ? bar("Siege", besieged.progress, isRelieved(game, c.siege!) ? "bad" : "ok", isRelieved(game, c.siege!) ? "stalled" : `${siegeDays(game, c, c.siege!)} days`) : ""}
     ${c.engineers || c.grain > 0 ? `<p class="note">${[c.engineers ? "Engineers with the column" : "", c.grain > 0 ? `grain for ${Math.ceil(c.grain)} days` : ""].filter(Boolean).join(" · ")}</p>` : ""}
+    ${treasuryText(c)}
     <div class="orders">
       <div class="seg" role="group" aria-label="Pace">
         ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}
@@ -504,6 +523,10 @@ function renderColumn() {
   panel.querySelector<HTMLButtonElement>("#take")?.addEventListener("click", () => { takeFlock(game, active); render(); });
   panel.querySelectorAll<HTMLButtonElement>("[data-herd]").forEach(b => { b.onclick = () => { takeFromHerders(game, active, b.dataset.herd === "all" ? herdersHere : Number(b.dataset.herd)); render(); }; });
   panel.querySelector<HTMLButtonElement>("#slaughter")?.addEventListener("click", () => { slaughterFlock(game, active); render(); });
+  panel.querySelector<HTMLButtonElement>("#remounts")?.addEventListener("click", () => {
+    const n = remountsAffordable(game);
+    if (orderRemounts(game, active, n)) { render(); setPlaying(true); }
+  });
 }
 
 // --- journal and notices ---
