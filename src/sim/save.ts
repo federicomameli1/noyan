@@ -3,11 +3,12 @@
 import { dateOf, type GameState } from "./game";
 import { formatDate } from "./calendar";
 import { isEventId } from "./events";
+import { DISPATCHES } from "./goals";
 import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -51,6 +52,10 @@ export function readSave(data: unknown): SaveFile {
     || !isNumber(g.treasury) || !Array.isArray(g.remounts) || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities)
     || !Array.isArray(g.log) || !isNumber(g.arrived) || !isNumber(g.wins) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;
+  // the khan's orders, and the favour they are worth
+  if (!isNumber(game.dispatch) || game.dispatch < 0 || game.dispatch > DISPATCHES.length
+    || !isNumber(game.favour) || !isNumber(game.winsAtDispatch)
+    || !isNumber(game.dispatchesMet) || !isNumber(game.dispatchesMissed)) fail("The save is damaged.");
   for (const c of game.columns) {
     if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition) || !isNumber(c.morale)
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");

@@ -55,6 +55,24 @@ describe("saves", () => {
     expect(() => readSave({ ...good, game: { ...good.game, jinArrived: 1 } })).toThrow("damaged");
   });
 
+  it("refuses a save whose orders of the khan do not make sense", () => {
+    const good = makeSave(newGame(), 0);
+    expect(() => readSave({ ...good, game: { ...good.game, dispatch: 99 } })).toThrow("damaged");
+    expect(() => readSave({ ...good, game: { ...good.game, favour: undefined } })).toThrow("damaged");
+    expect(() => readSave({ ...good, game: { ...good.game, winsAtDispatch: "many" } })).toThrow("damaged");
+  });
+
+  it("keeps the orders of the khan and the favour in the save", () => {
+    const s = newGame();
+    s.favour = 42;
+    s.dispatchesMet = 1;
+    s.dispatch = 1;
+    const loaded = readSave(JSON.stringify(makeSave(s, 0))).game;
+    expect(loaded.favour).toBe(42);
+    expect(loaded.dispatch).toBe(1);
+    expect(loaded.dispatchesMet).toBe(1);
+  });
+
   it("names the save by the date in the game", () => {
     const s = newGame();
     days(s, 3);

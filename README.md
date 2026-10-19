@@ -23,11 +23,20 @@ The map fills the screen. Hover a place to see the route and how many days it ta
 - **Jin armies.** The dynasty fields armies that march, relieve besieged cities, raid the flocks left behind and ride out to meet a column they judge themselves stronger than. What the scouts know of them depends on the distance: from afar an army is a size, up close its numbers, its spirit and its orders. Field armies are fed by wagon convoys from their home town; a column standing on the road falls on the wagons and the army goes hungry.
 - **Battles.** A battle is decided by the strength of the two sides: the men, the state of the horses, the ground, the spirit of the men, the walls behind the Jin, and the luck of the day. The odds are shown before the battle, and the report after it says what weighed most.
 - **The countryside.** The villages around a Jin place hold food, grain and livestock. Requisitioning takes a quarter of it and earns the anger of the people; plundering takes most of it, burns the fields and drives off the cattle. Angry villagers hide their food, and at the worst they steal horses at night.
-- **Events.** Things happen on the road and in the camps: elders offer a tribute, a farmer offers a hidden path, loose horses run off a beaten field, a hard frost falls on a mountain camp, the frozen Fen can be crossed on the ice. Each event is a choice, and the cost of each choice is written on the button.
+- **Events.** Things happen on the road and in the camps: elders offer a tribute, a farmer offers a hidden path, loose horses run off a beaten field, a hard frost falls on a mountain camp, the frozen Fen can be crossed on the ice, a merchant caravan buys the flock, a snowstorm closes a pass. Each event is a choice, and the cost of each choice is written on the button.
 - **War aims.** The campaign has goals beyond the calendar. One decisive aim ends the war when it is met; the others are honours, two of them judged as the campaign goes and two when it is over. The decisive one is always in sight in the top bar, the others are in the campaign panel.
 - **Booty and remounts.** A battle costs two horses for every man lost, and nothing else on the map gives horses back. A fallen town holds goods: sack it, and the goods buy remounts from the khan's herds. The herds need ground the Mongols hold to graze on, and they take days to come.
 - **The war effort.** As the campaign goes on the Jin send more armies from the south. The siege of Taiyuan can be relieved more than once: storm the walls, or starve the city out in one run.
 - **Several columns.** The khan sends reinforcements, and a column standing at a place can be divided in two. Each column has its own orders, its own pace and its own siege, and two columns standing at the same place can be joined again.
+
+## Layer 2: the war comes back
+
+- **The khan's orders.** Taking Taiyuan no longer ends the campaign: the khan has more orders, and the war goes on until the thaw. Three letters, each with an aim and a day by which it must be fulfilled: take the city in the north, break a Jin army, take the last city in the mountains. The current order is always in the top bar, with the days left.
+- **The khan's favour.** The score of the campaign: an order fulfilled earns it, an order missed spends it, a town lost spends it. When it runs out, the noyan is called back to the steppe.
+- **The counter-offensive.** The Jin field army, freed from the city it was to relieve, turns north and calls on the towns the Mongols hold. A town with nobody in it is taken back, with its goods and its remounts; a town with a garrison in it is defended at the walls, and a garrison strong enough to hold them keeps the Jin away. The raiders take the sheep of the allied herders too.
+- **The campaign test.** The whole war is played to the end by a noyan with a policy, in the tests: the careful one, who forages, sacks the towns and chooses his battles by the odds, must win; the one who only marches and fights must lose.
+
+The design of the layer, and what the playtest found, are written out in `docs/layer-2.md`.
 
 ## Running locally
 
@@ -52,15 +61,17 @@ src/
              jin.ts        the Jin armies in the field, their convoys and their reserves
              country.ts   the countryside around the Jin places
              events.ts     the events that wait for an answer
-             goals.ts      the aims of the war
+             goals.ts      the aims of the war and the orders of the khan
              booty.ts      the goods of a fallen town and the remounts they buy
              columns.ts    dividing a column, joining columns again
+             journal.ts    the lines the player reads
              save.ts       saved games
   ui/      graphics: the SVG map and panels, reading the simulation state
   data/    pre-projected geography (coasts, rivers, relief, passes)
   main.ts  mounts the page
 docs/
-  layer-1.md  the rules of the war, in prose
+  layer-1.md  the rules of layer 1, in prose
+  layer-2.md  the design of layer 2, and what the playtest found
 ```
 
 The main rule: `src/sim` must never depend on the browser. `tsconfig.sim.json` compiles that folder without the DOM type definitions, so if a simulation file uses `document` or `window` the build fails. This keeps the logic testable on its own and lets it run faster than real time later on.
