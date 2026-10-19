@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   HERDERS_REGROW, HORSE_PRICE, DETACHMENT_MEN, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
-  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, orderSurrender, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays, wallsOf,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -723,15 +723,15 @@ function factorList(r: BattleResult, ground: Ground) {
       case "horses": return `Our horses: ${times(f.mongol)}`;
       case "morale": return `Spirit of the men: ours ${times(f.mongol)}, theirs ${times(f.jin)}`;
       case "surprise": return f.mongol > 1 ? `We take them by surprise: ${times(f.mongol)}` : `They take us by surprise: ${times(f.jin)} for them`;
-      case "walls": return `They fight from behind walls: ${times(f.jin)} for them`;
+      case "walls": return f.mongol > 1 ? `We fight behind the walls: ${times(f.mongol)}` : `They fight from behind walls: ${times(f.jin)} for them`;
       case "luck": return `Fortune of the day: ours ${times(f.mongol)}, theirs ${times(f.jin)}`;
     }
   };
   return r.factors.length ? `<ul class="factors">${r.factors.map(f => `<li>${line(f)}</li>`).join("")}</ul>` : "";
 }
 /** What to expect: the outcome on an average day, and how far luck can move it. */
-function oddsHTML(c: Column, a: JinArmy, helpers = 0) {
-  const input = battleInput(game, c, a, helpers);
+function oddsHTML(c: Column, a: JinArmy, helpers = 0, walls = 1) {
+  const input = battleInput(game, c, a, helpers, walls);
   const { even, best, worst } = battleOdds(input);
   const up = best.outcome !== even.outcome ? `${OUTCOME[best.outcome]} if fortune is with us` : "";
   const down = worst.outcome !== even.outcome ? `${OUTCOME[worst.outcome]} if it is against us` : "";
@@ -752,6 +752,18 @@ function showBattle(label: string, title: string, body: string, actions: string)
 function renderBattle() {
   const t = game.threat;
   const fresh = game.lastBattle && game.lastBattle !== reportedBattle ? game.lastBattle : null;
+  if (t && t.kind === "call" && !game.over) {
+    const c = game.columns[t.column], a = game.jin[t.army];
+    const site = graph.site(a.at!), walls = wallsOf(game, a.at!);
+    showBattle(`${c.name} at ${site.name}`, `The ${a.name} calls on ${site.name}`,
+      `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} stand before the gates of ${site.name}. `
+        + `Behind the walls your men are worth ${times(walls)} what they are worth in the open.`,
+      `<button class="primary big" id="b-fight">Hold the walls</button>
+      <button class="big" id="b-surrender">Give the town up</button>`);
+    $("b-fight").onclick = () => { orderFight(game); render(); };
+    $("b-surrender").onclick = () => { orderSurrender(game); render(); };
+    return;
+  }
   if (t && t.kind === "relief" && !game.over) {
     const c = game.columns[t.column], a = game.jin[t.army];
     const city = game.cities[a.at!], name = graph.site(a.at!).name, helpers = reliefHelpers(game);

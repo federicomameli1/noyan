@@ -19,6 +19,8 @@ export interface MongolForce {
   morale?: number;
   /** the Mongols fall on the Jin before they are ready */
   surprise?: boolean;
+  /** the walls the Mongols are defending behind: they multiply their strength [S] */
+  walls?: number;
 }
 
 /** The Jin army: mostly footmen, with whatever horsemen the dynasty can still field. */
@@ -80,6 +82,7 @@ export function strength(input: BattleInput): { mongol: number; jin: number } {
     * R.GROUND_HORSE[input.ground]
     * moraleFactor(m.morale ?? R.MONGOL_MORALE)
     * (m.surprise ? R.SURPRISE : 1)
+    * (m.walls ?? 1)
     * (input.luck?.mongol ?? 1);
   const j = input.jin;
   const jin = (j.foot * R.TROOP_VALUE.jinFoot * R.GROUND_FOOT[input.ground]
@@ -106,7 +109,7 @@ function factors(input: BattleInput): BattleFactor[] {
     { factor: "horses", mongol: horseFactor(m.condition, m.fatigue), jin: 1 },
     { factor: "morale", mongol: moraleFactor(m.morale ?? R.MONGOL_MORALE), jin: moraleFactor(j.morale) },
     { factor: "surprise", mongol: m.surprise ? R.SURPRISE : 1, jin: j.surprise ? R.SURPRISE : 1 },
-    { factor: "walls", mongol: 1, jin: j.walls ?? 1 },
+    { factor: "walls", mongol: m.walls ?? 1, jin: j.walls ?? 1 },
     { factor: "luck", mongol: input.luck?.mongol ?? 1, jin: input.luck?.jin ?? 1 },
   ];
   return all

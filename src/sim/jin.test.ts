@@ -66,14 +66,23 @@ describe("the relief army", () => {
     expect(army(s).order).toBe("relieve");
   });
 
-  it("goes back home if Taiyuan falls before it arrives", () => {
+  it("turns on the towns the Mongols hold when the city they came to relieve has fallen", () => {
     const s = at("datong");
     s.cities.fenzhou.taken = true;
     days(s, 3);
     s.cities.taiyuan.taken = true;
     days(s, 1);
-    expect(army(s).order).toBe("return");
-    expect(army(s).target).toBe("pingyang");
+    expect(army(s).order).toBe("call");
+    expect(army(s).target).toBe("fenzhou");
+  });
+
+  it("calls on the city the Mongols have just taken, if it is the nearest", () => {
+    const s = at("datong");
+    days(s, 3);
+    s.cities.taiyuan.taken = true;
+    days(s, 1);
+    expect(army(s).order).toBe("call");
+    expect(army(s).target).toBe("taiyuan");
   });
 });
 

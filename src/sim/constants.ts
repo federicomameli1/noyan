@@ -286,6 +286,8 @@ export const SLAUGHTER_SHARE = 0.5;
 export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
+/** share of the herders' sheep a raid takes [S] */
+export const HERDER_RAID = 0.5;
 
 // --- columns (layer 1) ---
 /** men a detachment keeps, to be an army on its own [S] */

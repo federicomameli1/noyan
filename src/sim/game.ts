@@ -189,8 +189,11 @@ export interface RemountOrder {
 
 /** A Jin army upon a column, waiting for the player's answer. Indexes into `columns` and `jin`. */
 export interface Threat {
-  /** attack: the army caught up with the column · relief: the army reached the city the column besieges */
-  kind: "attack" | "relief";
+  /**
+   * attack: the army caught up with the column · relief: the army reached the city the column
+   * besieges · call: the army calls on a town the Mongols hold
+   */
+  kind: "attack" | "relief" | "call";
   column: number;
   army: number;
   hour: number;
@@ -566,9 +569,13 @@ export function canAttack(s: GameState, ci: number): JinArmy | null {
 }
 
 /** The battle between a column and a Jin army, fought where the army stands, before luck. */
-export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0): BattleInput {
+export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0, walls = 1): BattleInput {
   const jin = armyForce(s, a);
-  return { mongol: columnForce(c), jin: { ...jin, foot: jin.foot + helpers }, ground: battleGround(graph.site(a.at ?? campSite(c).id)) };
+  return {
+    mongol: { ...columnForce(c), walls },
+    jin: { ...jin, foot: jin.foot + helpers },
+    ground: battleGround(graph.site(a.at ?? campSite(c).id)),
+  };
 }
 
 /** A garrison fighting outside its walls: all foot. */
@@ -600,10 +607,10 @@ export function orderAttack(s: GameState, ci: number): boolean {
 }
 
 /** Fights the battle between a column and the Jin army where that army stands, and applies what follows. */
-export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0) {
+export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0, walls = 1) {
   const c = s.columns[ci];
   const site = graph.site(a.at!);
-  const b = joinBattle(s, c, battleInput(s, c, a, helpers), site, attacker, a.name);
+  const b = joinBattle(s, c, battleInput(s, c, a, helpers, walls), site, attacker, a.name);
   // the garrison's men fall in proportion to their share of the foot
   const footAll = a.foot + helpers;
   const garrisonLost = footAll > 0 ? Math.round(b.footLost * helpers / footAll) : 0;
@@ -721,9 +728,27 @@ export function orderFight(s: GameState): boolean {
   s.threat = null;
   const c = s.columns[t.column], a = s.jin[t.army];
   if (c.men <= 0 || armyMen(a) <= 0 || a.at !== c.at) return false;
+  if (t.kind === "call") {
+    // the column holds the walls of the town: the walls are worth the strength they give
+    fight(s, t.column, a, "jin", 0, wallsOf(s, a.at!));
+    const outcome = s.lastBattle?.result.outcome;
+    if (outcome === "defeat" || outcome === "disaster") retakeCity(s, a.at!, a);
+    return true;
+  }
   fight(s, t.column, a, "jin", reliefHelpers(s, t));
   // a relief army that holds the field goes into the city it came for
   if (t.kind === "relief" && a.at && a.order === "hold") enterCity(s, a, a.at);
+  return true;
+}
+
+/** Gives the town up to the Jin army that calls on it. */
+export function orderSurrender(s: GameState): boolean {
+  const t = s.threat;
+  if (!t || t.kind !== "call") return false;
+  s.threat = null;
+  const a = s.jin[t.army];
+  if (!a.at) return false;
+  retakeCity(s, a.at, a);
   return true;
 }
 
@@ -760,6 +785,31 @@ export function orderRefuse(s: GameState): boolean {
   log(s, `${c.name} rides away from the ${a.name} towards ${graph.site(to).name}, at a forced march.${left}`, "warning");
   return true;
 }
+
+/** A Jin army that calls on a town the Mongols hold, and the town is taken back. */
+export function retakeCity(s: GameState, id: string, a: JinArmy) {
+  const city = s.cities[id];
+  if (!city) return;
+  const site = graph.site(id);
+  const goods = city.booty;
+  city.taken = false;
+  city.takenAt = null;
+  city.progress = 0;
+  city.booty = 0;
+  city.sacked = false;
+  // the half of the army that stays holds the town
+  city.garrison = Math.round(armyMen(a) / 2);
+  city.stores = city.storesAtStart;
+  // the remounts waiting there are taken with the town
+  const remounts = s.sites[id].remounts;
+  s.sites[id].remounts = 0;
+  s.favour -= R.FAVOUR_TOWN_LOST;
+  log(s, `The Jin take ${site.name} back: the town is theirs again${goods > 0 ? `, and ${fmt(goods)} goods with it` : ""}${remounts > 0 ? `, and ${fmt(remounts)} remounts with it` : ""}. `
+    + `The khan is angry.`, "alert");
+}
+
+/** The walls a column defends behind, in the town where it stands. */
+export const wallsOf = (s: GameState, id: string) => R.CITY_TYPES[s.cities[id]?.type ?? "town"].walls;
 
 function checkEnd(s: GameState) {
   if (s.over) return;
