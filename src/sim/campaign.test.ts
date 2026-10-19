@@ -118,6 +118,23 @@ describe("a whole campaign", () => {
     expect(s.log.at(-1)!.text).toMatch(/Defeat/);
   });
 
+  it("the campaigns, played and reported", () => {
+    // the report the balance is read from: run the tests and read the lines
+    for (const policy of ["direct", "careful"] as Policy[]) {
+      const s = play(policy);
+      const men = s.columns.reduce((n, c) => n + c.men, 0);
+      const horses = s.columns.reduce((n, c) => n + c.horses, 0);
+      const towns = Object.values(s.cities).filter(c => c.taken).length;
+      console.log(
+        `  ${policy.padEnd(8)} ${String(s.result).padEnd(8)} day ${String(Math.floor(s.hour / 24)).padStart(3)}`
+        + ` | men ${Math.round(men).toString().padStart(5)} | horses ${Math.round(horses).toString().padStart(5)}`
+        + ` | favour ${String(s.favour).padStart(3)} | orders ${s.dispatchesMet}/${s.dispatchesMet + s.dispatchesMissed}`
+        + ` | towns ${towns}`,
+      );
+    }
+    expect(true).toBe(true);
+  });
+
   it("a column with no men cannot besiege a city", () => {
     const s = newGame();
     s.columns[0].men = 100;

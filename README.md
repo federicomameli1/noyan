@@ -45,9 +45,13 @@ Requires Node 22 or later.
 ```sh
 npm install
 npm run dev        # dev server with hot reload
-npm test           # simulation tests (Vitest)
+npm test           # simulation tests (Vitest), with the campaign report
 npm run build      # type checks and production build into dist/
 ```
+
+`npm test` plays the whole campaign with two policies and prints the result of each: the
+careful noyan, who forages and sacks the towns he takes, and the one who only marches and
+fights. The balance of the war is read from those lines.
 
 ## Structure
 
