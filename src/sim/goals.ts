@@ -164,12 +164,6 @@ export function currentAim(s: GameState): Aim | null {
   return d ? AIMS.find(a => a.id === d.aim) ?? null : null;
 }
 
-/** True when the order the khan is waiting for is fulfilled. */
-export function dispatchMet(s: GameState): boolean {
-  const aim = currentAim(s);
-  return !!aim && aim.met(s);
-}
-
 /** The place the current order asks the column to take, if it asks for one. */
 export function objectiveOf(s: GameState): string | null {
   const aim = currentAim(s);
