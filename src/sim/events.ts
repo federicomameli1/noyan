@@ -1,5 +1,5 @@
 // Events at places (layer 1): short texts that appear when something happens to a column, each with
-// two choices whose cost is written on the button. While one waits for an answer the interface stops
+// a few choices whose cost is written on the button. While one waits for an answer the interface stops
 // time. The LAST choice of each event is the default: what happens if nobody chooses, the one that
 // changes the least, so a simulation with no player never gets stuck. Numbers in constants.ts.
 
