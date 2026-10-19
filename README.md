@@ -59,6 +59,8 @@ src/
   ui/      graphics: the SVG map and panels, reading the simulation state
   data/    pre-projected geography (coasts, rivers, relief, passes)
   main.ts  mounts the page
+docs/
+  layer-1.md  the rules of the war, in prose
 ```
 
 The main rule: `src/sim` must never depend on the browser. `tsconfig.sim.json` compiles that folder without the DOM type definitions, so if a simulation file uses `document` or `window` the build fails. This keeps the logic testable on its own and lets it run faster than real time later on.
