@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// the campaign report is written to the standard output of the test runner
+declare const console: { log(...args: unknown[]): void };
 import { forageBlock, orderForage } from "./country";
 import { orderSack } from "./booty";
 import { orderSplit } from "./columns";

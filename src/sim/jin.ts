@@ -91,7 +91,7 @@ export function sizeBand(men: number): "small" | "medium" | "large" {
 export const armyPosition = (a: JinArmy) => columnPosition(a);
 
 /** The town the Mongols hold at this place, if any. */
-const game_town = (s: GameState, id: string) => (s.cities[id]?.taken ? id : null);
+const mongolTown = (s: GameState, id: string) => (s.cities[id]?.taken ? id : null);
 
 /** The Jin field army standing at a site, if any (not one on a link). Horsemen do not bar roads: they get out of the way. */
 export const armyAt = (s: GameState, site: string) => s.jin.find(a => a.at === site && a.kind === "field" && armyMen(a) > 0);
@@ -209,7 +209,7 @@ export function stepJin(s: GameState, hourOfDay: number) {
       const ci = s.columns.findIndex(c => c.at === a.at && c.men >= R.RAID_MIN_MEN);
       if (ci < 0) continue;
       // a column in a town the Mongols hold is attacked at its walls: hold them, or give the town up
-      const town = game_town(s, a.at);
+      const town = mongolTown(s, a.at);
       s.threat = { kind: town ? "call" : "attack", column: ci, army: ai, hour: s.hour };
       log(s, town
         ? `The ${a.name} calls on ${graph.site(a.at).name}: hold the walls, or give the town up.`
