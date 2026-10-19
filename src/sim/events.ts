@@ -20,6 +20,8 @@ export type EventId = "tribute" | "frost" | "herd" | "guides" | "deserters" | "i
 export interface EventChoice {
   label: string;
   cost: string;
+  /** the choice cannot be taken now: the button is shown, but greyed out */
+  disabled?: boolean;
 }
 
 interface EventDef {
@@ -188,9 +190,11 @@ const EVENTS: Record<EventId, EventDef> = {
     text: () => "A caravan of merchants from the north has met the column on the road.",
     choices: (s, ev) => {
       const c = s.columns[ev.column];
+      const food = s.treasury >= R.MERCHANT_FOOD_PRICE;
+      const sheep = c.sheep >= R.MERCHANT_SHEEP;
       return [
-        { label: "Buy food", cost: s.treasury >= R.MERCHANT_FOOD_PRICE ? `${fmt(R.MERCHANT_FOOD)} rations for ${R.MERCHANT_FOOD_PRICE} goods` : `not enough goods (${fmt(s.treasury)})` },
-        { label: "Sell our sheep", cost: c.sheep >= R.MERCHANT_SHEEP ? `${fmt(R.MERCHANT_SHEEP)} sheep for ${R.MERCHANT_SHEEP_PRICE} goods` : `not enough sheep (${fmt(c.sheep)})` },
+        { label: "Buy food", cost: food ? `${fmt(R.MERCHANT_FOOD)} rations for ${R.MERCHANT_FOOD_PRICE} goods` : `not enough goods (${fmt(s.treasury)})`, disabled: !food },
+        { label: "Sell our sheep", cost: sheep ? `${fmt(R.MERCHANT_SHEEP)} sheep for ${R.MERCHANT_SHEEP_PRICE} goods` : `not enough sheep (${fmt(c.sheep)})`, disabled: !sheep },
         { label: "Let them pass", cost: "nothing" },
       ];
     },

@@ -793,8 +793,10 @@ function renderBattle() {
   if (view) {
     const ev = game.event!;
     const c = game.columns[ev.column];
+    // the first choice that can be taken is the one the button highlights
+    const first = Math.max(0, view.choices.findIndex(ch => !ch.disabled));
     showBattle(`${c.name} at ${graph.site(ev.site).name}`, view.title, `<p>${view.text}</p>`,
-      view.choices.map((ch, i) => `<button class="big${i === 0 ? " primary" : ""}" id="e-${i}">${ch.label}: ${ch.cost}</button>`).join(""));
+      view.choices.map((ch, i) => `<button class="big${i === first ? " primary" : ""}" id="e-${i}"${ch.disabled ? " disabled" : ""}>${ch.label}: ${ch.cost}</button>`).join(""));
     view.choices.forEach((_, i) => {
       const b = document.getElementById(`e-${i}`);
       if (b) b.onclick = () => { chooseEvent(game, i); render(); };

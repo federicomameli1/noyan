@@ -378,6 +378,17 @@ describe("the merchant caravan", () => {
     step(s);
     expect(s.event).toBeNull();
   });
+
+  it("shows a choice the column cannot take as greyed out", () => {
+    const s = at("huairen");
+    col(s).sheep = 500; // no goods, but sheep to sell
+    orderMarch(s, 0, "yingzhou");
+    step(s);
+    const choices = eventView(s)!.choices;
+    expect(choices[0].disabled).toBe(true);
+    expect(choices[1].disabled).toBe(false);
+    expect(choices[2].disabled).toBeFalsy();
+  });
 });
 
 describe("the snowstorm", () => {
