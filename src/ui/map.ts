@@ -448,6 +448,8 @@ export function createMap(opts: MapOptions): GameMap {
   const selSize = new Map<string, number>();
   const KIND_TEXT: Record<Site["kind"], string> = { city: "town", pasture: "pasture", pass: "pass", junction: "crossroads" };
   const capitals = new Set(CITIES.filter(c => c.capital).map(c => c.name)), drawnPasses = new Set(GEO.passes.map(p => p.id));
+  // where each place is drawn and how to select it, so marks drawn on top of a place can pass clicks to it
+  const sitePicks: { x: number; y: number; pick: () => void }[] = [];
   graph?.sites.forEach(site => {
     const [x, y] = project(site.lon, site.lat);
     const g = el("g", { class: "site", tabindex: 0, role: "button", "aria-label": site.name }, siteG);
@@ -484,9 +486,12 @@ export function createMap(opts: MapOptions): GameMap {
     g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
     g.addEventListener("pointerleave", () => { hideTip(); opts.onHoverSite?.(null); });
     const pick = () => { if (!moved) opts.onSelectSite?.(site); };
+    sitePicks.push({ x, y, pick });
     g.addEventListener("click", pick);
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
   });
+  /** The place drawn under a point of the map, if any. */
+  const siteAt = (x: number, y: number) => sitePicks.find(s => Math.hypot(s.x - x, s.y - y) < 4);
   siteG.appendChild(selRing);
   selRing.style.display = "none";
 
@@ -566,6 +571,12 @@ export function createMap(opts: MapOptions): GameMap {
       const g = el("g", { class: "convoy-mark" }, convoyLayer);
       el("g", {}, g).innerHTML = wagon();
       const title = el("title", {}, g);
+      // an army standing on a place must not hide it: a click on the banner selects the place
+      const i = armyGs.length;
+      g.addEventListener("click", () => {
+        const m = armyMarks[i];
+        if (m) siteAt(...project(m.lon, m.lat))?.pick();
+      });
       g.addEventListener("pointerenter", e => { if (!drag) showTip(title.textContent ?? "", e, TIP_DELAY_SITE); });
       g.addEventListener("pointermove", e => { if (!drag) showTip(null, e); });
       g.addEventListener("pointerleave", hideTip);
@@ -606,6 +617,7 @@ export function createMap(opts: MapOptions): GameMap {
     armyMarks.forEach((m, i) => {
       const [x, y] = project(m.lon, m.lat);
       const shared = cols.some(([cx, cy]) => Math.hypot(cx - x, cy - y) < 3);
+      armyG(i).g.classList.toggle("on-site", !!siteAt(x, y));
       armyG(i).g.setAttribute("transform", `translate(${x - (shared ? 30 * k : 0)},${y}) scale(${k})`);
     });
   }

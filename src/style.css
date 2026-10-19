@@ -38,6 +38,9 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 .army-mark .army-ring { fill: var(--pol-jin); fill-opacity: .08; stroke: var(--pol-jin); stroke-width: 1.4; stroke-dasharray: 4 3; }
 .army-mark .army-label { fill: var(--pol-jin); font-weight: 600; font-size: 13px; stroke-width: 3px; }
 .army-mark.stale { opacity: .45; }
+/* the scouting ring is wide: it must not take clicks from the places around it */
+.army-mark .army-ring { pointer-events: none; }
+.army-mark.on-site { cursor: pointer; }
 .convoy-mark .wagon-box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
 .convoy-mark .wagon-wheel { fill: none; stroke: var(--ink); stroke-width: 1.2; }
 .site:hover .tg, .site:focus .tg, .pass:hover .tg, .pass:focus .tg { stroke-width: 2.4; }
