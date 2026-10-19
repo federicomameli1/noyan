@@ -753,7 +753,7 @@ export function orderSurrender(s: GameState): boolean {
   s.threat = null;
   const a = s.jin[t.army];
   if (!a.at) return false;
-  retakeCity(s, a.at, a);
+  retakeCity(s, a.at, a, true);
   return true;
 }
 
@@ -792,7 +792,7 @@ export function orderRefuse(s: GameState): boolean {
 }
 
 /** A Jin army that calls on a town the Mongols hold, and the town is taken back. */
-export function retakeCity(s: GameState, id: string, a: JinArmy) {
+export function retakeCity(s: GameState, id: string, a: JinArmy, surrendered = false) {
   const city = s.cities[id];
   if (!city) return;
   const site = graph.site(id);
@@ -809,7 +809,8 @@ export function retakeCity(s: GameState, id: string, a: JinArmy) {
   const remounts = s.sites[id].remounts;
   s.sites[id].remounts = 0;
   s.favour -= R.FAVOUR_TOWN_LOST;
-  log(s, `The Jin take ${site.name} back: the town is theirs again${goods > 0 ? `, and ${fmt(goods)} goods with it` : ""}${remounts > 0 ? `, and ${fmt(remounts)} remounts with it` : ""}. `
+  const how = surrendered ? "is given up to the Jin" : "is taken back by the Jin";
+  log(s, `${site.name} ${how}: the town is theirs again${goods > 0 ? `, and ${fmt(goods)} goods with it` : ""}${remounts > 0 ? `, and ${fmt(remounts)} remounts with it` : ""}. `
     + `The khan is angry.`, "alert");
 }
 

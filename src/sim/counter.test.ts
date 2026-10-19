@@ -25,7 +25,7 @@ describe("a town taken back by the Jin", () => {
     expect(s.cities.fenzhou.taken).toBe(false);
     expect(s.cities.fenzhou.garrison).toBeGreaterThan(0);
     expect(s.favour).toBe(60);
-    expect(s.log.some(l => l.text.includes("take Fenzhou back"))).toBe(true);
+    expect(s.log.some(l => l.text.includes("Fenzhou is taken back by the Jin"))).toBe(true);
   });
 
   it("loses its goods and the remounts waiting there", () => {
