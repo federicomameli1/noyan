@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   HERDERS_REGROW, HORSE_PRICE, DETACHMENT_MEN, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
-  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, orderSurrender, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays, wallsOf,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, isArmy, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, orderSurrender, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays, wallsOf,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -502,6 +502,7 @@ function renderColumn() {
     </div>
     ${bar("Condition", c.condition, level(c.condition, 40, 20), `${BAND[conditionBand(c.condition)]} ${showWhy ? "▴" : "▾"}`,
       `<button class="bar why" aria-expanded="${showWhy}" title="Why the condition changes">`, "</button>")}
+    ${isArmy(c) ? "" : `<p class="note t-bad">The column is broken: with ${fmt(c.men)} men it cannot besiege a city or face an army.</p>`}
     ${!showWhy ? "" : c.lastDay ? whyText(c.lastDay) : `<p class="why-list">The horses gain or lose condition each night, from the grass they found and the road they covered.</p>`}
     ${bar("Fatigue", c.fatigue, level(100 - c.fatigue, 40, 15), c.fatigue < 30 ? "rested" : c.fatigue < 60 ? "tired" : c.fatigue < 85 ? "worn" : "spent")}
     ${bar("Food", (food / 30) * 100, level(food, 7, 3), `${Math.floor(food)} days`)}
