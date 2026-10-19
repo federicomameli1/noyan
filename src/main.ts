@@ -5,7 +5,7 @@ import {
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
-  AIMS, aimMet,
+  AIMS, aimMet, currentAim, dispatchTime, favourText, DISPATCHES,
 } from "./sim";
 import * as saves from "./ui/saves";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type ConvoyMark, type Layer } from "./ui/map";
@@ -608,16 +608,21 @@ function renderPreview() {
   }
 }
 
-// --- war aims: what the campaign is for ---
-/** The aims, in the campaign panel, and the decisive one in the top bar. */
+// --- war aims: the khan's orders and the honours ---
+/** The order the khan is waiting for, the honours, and the khan's favour. */
 function renderAims() {
-  $("aims").innerHTML = AIMS.map(a => {
+  const aim = currentAim(game);
+  const t = dispatchTime(game);
+  const order = aim
+    ? `<li class="order"><b>${aim.name}</b><span class="st">${aim.status(game)} · due by ${t.due}, ${t.left} days left</span><div class="note">${aim.desc}</div></li>`
+    : `<li class="order met"><b>No more orders</b><span class="st">the khan is satisfied</span></li>`;
+  const honours = AIMS.filter(a => !a.decisive).map(a => {
     const met = aimMet(game, a);
-    const cls = [met ? "met" : "", a.decisive ? "decisive" : ""].filter(Boolean).join(" ");
-    return `<li class="${cls}"><b>${a.name}</b><span class="st">${a.status(game)}</span><div class="note">${a.desc}</div></li>`;
+    return `<li class="${met ? "met" : ""}"><b>${a.name}</b><span class="st">${a.status(game)}</span></li>`;
   }).join("");
-  const main = AIMS.find(a => a.decisive)!;
-  $("aim-chip").innerHTML = `<b>${main.name}</b> · ${main.status(game)}`;
+  $("aims").innerHTML = order + honours;
+  $("aim-chip").innerHTML = aim ? `<b>${aim.name}</b> · ${aim.status(game)} · ${t.left} days` : "the khan is satisfied";
+  $("favour").textContent = `The khan's favour: ${game.favour} — ${favourText(game)}.`;
 }
 
 function render() {
@@ -828,14 +833,22 @@ function showEnd() {
     const met = aimMet(game, a, true);
     return `<dt>${a.name}</dt><dd class="${met ? "t-ok" : "t-warn"}">${met ? "met" : "not met"}</dd>`;
   }).join("");
+  const orders = DISPATCHES.map((d, i) => {
+    const a = AIMS.find(x => x.id === d.aim)!;
+    const done = i < game.dispatch;
+    const met = done && game.dispatchesMet > i;
+    return `<dt>${a.name}</dt><dd class="${!done ? "" : met ? "t-ok" : "t-bad"}">${!done ? "not reached" : met ? "fulfilled" : "missed"}</dd>`;
+  }).join("");
   const win = game.result === "victory";
-  $("end-title").textContent = win ? "Taiyuan has fallen" : "The campaign has failed";
+  $("end-title").textContent = win ? "The campaign is won" : "The campaign has failed";
   setHTML($("end-body"), `<p>${game.log.at(-1)?.text ?? ""}</p><dl>
     <dt>Date</dt><dd>${formatDate(dateOf(game))}</dd>
     <dt>Men</dt><dd>${fmt(men)} of ${fmt(menAtStart)}</dd>
     <dt>Horses</dt><dd>${fmt(horses)} of ${fmt(horsesAtStart)}</dd>
     <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd>
     <dt>Goods taken</dt><dd>${fmt(goods)}</dd>
+    <dt>The khan's favour</dt><dd>${game.favour} — ${favourText(game)}</dd>
+    ${orders}
     ${aims}</dl>`);
   $("end").hidden = false;
 }

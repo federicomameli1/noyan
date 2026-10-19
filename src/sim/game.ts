@@ -6,7 +6,7 @@ import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
-import { decisiveAimMet } from "./goals";
+import { checkDispatches, DISPATCHES } from "./goals";
 import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { bootyOf, stepBooty } from "./booty";
@@ -151,6 +151,13 @@ export interface GameState {  /** hours since the start of the scenario */
   arrived: number;
   /** battles won outright: a Jin army broken in the open */
   wins: number;
+  /** the order of the khan the campaign is on: the index of the letter in the list */
+  dispatch: number;
+  /** the khan's favour, 0 to 100 */
+  favour: number;
+  /** the orders of the khan fulfilled, and the ones missed */
+  dispatchesMet: number;
+  dispatchesMissed: number;
   /** state of the battle dice: each battle draws its luck from it */
   rng: number;
   /** the last battle fought, for the report */
@@ -231,9 +238,13 @@ export function newGame(sheep = 0): GameState {
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0, sacked: false };
   }
+  const first = DISPATCHES[0];
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
-    log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, dispatchesMet: 0, dispatchesMissed: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    log: [
+      { hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Spies say the Jin are gathering an army at Pingyang, in the south.` },
+      { hour: 0, text: `A letter from the khan. ${first.title}: ${first.letter} The order must be done by ${formatDate(first.deadline)}.` },
+    ],
   };
 }
 
@@ -521,11 +532,6 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   if (got.booty > 0) gains.push(`${got.booty.toLocaleString("en")} goods to sack`);
   const opened = got.opensPass ? " The road through the pass is open." : "";
   log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.${opened}`, "arrival");
-  if (decisiveAimMet(s)) {
-    s.result = "victory";
-    s.over = true;
-    log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}. The war is over.`, "arrival");
-  }
 }
 
 // --- battles ---
@@ -824,6 +830,7 @@ export function step(s: GameState) {
   stepJin(s, hourOfDay);
   stepBooty(s);
   checkEvents(s);
+  checkDispatches(s);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
   const next = SCENARIO.reinforcements[s.arrived];

@@ -137,7 +137,7 @@ dd { margin: 0; }
 .aims { margin: 0 0 4px; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 12.5px; }
 .aims li { padding-left: 9px; border-left: 2px solid var(--hud-line); }
 .aims li.met { border-left-color: var(--ok); }
-.aims li.decisive { border-left-color: var(--accent); }
+.aims li.order { border-left-color: var(--accent); }
 .aims li b { display: block; }
 .aims li .st { color: var(--muted); }
 .aims li.met .st { color: var(--ok); }

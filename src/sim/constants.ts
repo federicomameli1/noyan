@@ -298,6 +298,24 @@ export const AIM_CITIES = 3;
 export const AIM_ROSTER = 2000;
 /** horses for every man when the campaign is over [S] */
 export const AIM_HORSES_PER_MAN = 2;
+/** cities the Mongols must still hold when the campaign is over [S] */
+export const AIM_HOLD = 2;
+
+// --- the khan's favour (layer 2) ---
+/** the favour the khan starts with: a khan with a war in hand is not pleased [S] */
+export const FAVOUR_START = 70;
+/** the favour an order fulfilled earns [S] */
+export const FAVOUR_FULFILLED = 10;
+/** the favour an order missed costs [S] */
+export const FAVOUR_MISSED = 15;
+/** the favour a town lost to the Jin costs [S] */
+export const FAVOUR_TOWN_LOST = 10;
+/** below this favour the khan is angry [S] */
+export const FAVOUR_LOW = 20;
+/** below this favour the khan is not pleased [S] */
+export const FAVOUR_PARDON = 40;
+/** below this favour the khan is content enough [S] */
+export const FAVOUR_CONTENT = 60;
 
 // --- booty and remounts (layer 1) ---
 /** goods a fallen town holds for every man of its garrison [S] */
