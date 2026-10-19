@@ -2,7 +2,9 @@
 
 A real-time strategy and management game in the browser. You are a noyan, a general of the Mongol Empire, and your job is to keep your army alive in northern China, starting from Muqali's campaign in 1217. Supplies, fodder, horses and movement matter more than battles.
 
-Hobby project, built in layers: first the logistics loop in a single region (layer 0), then Jin armies, stat-based battles, plunder and the war itself (layer 1).
+Hobby project, built in layers: first the logistics loop in a single region (layer 0), then Jin armies, stat-based battles, plunder and the war itself (layer 1), then the khan's orders and the Jin counter-offensive (layer 2).
+
+**Working on it?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first: the state of the work, the rules of the house and the pitfalls.
 
 ## Layer 0: Into Shanxi, 1218
 
@@ -76,6 +78,7 @@ src/
 docs/
   layer-1.md  the rules of layer 1, in prose
   layer-2.md  the design of layer 2, and what the playtest found
+  HANDOFF.md  a technical handover: the state of the work and the rules of the house
 ```
 
 The main rule: `src/sim` must never depend on the browser. `tsconfig.sim.json` compiles that folder without the DOM type definitions, so if a simulation file uses `document` or `window` the build fails. This keeps the logic testable on its own and lets it run faster than real time later on.
