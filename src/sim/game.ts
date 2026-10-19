@@ -621,7 +621,7 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
     + `the Jin lose ${fmt(b.footLost + b.horseLost)} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
   checkEnd(s);
   // a beaten enemy leaves horses loose on the field: the column can round them up
-  if ((b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);
+  if (!s.over && (b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);
 }
 
 /**

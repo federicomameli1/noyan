@@ -681,6 +681,7 @@ function renderConvoys() {
     const seen = game.columns.some(c => c.men > 0 && distanceKm(lon, lat, ...columnPosition(c)) <= SIGHT_KM.size);
     if (!seen) continue;
     const a = game.jin[cv.army];
+    if (!a) continue;
     const dest = armyMen(a) > 0 && !game.cities[a.home]?.taken ? a.at ?? a.leg?.to ?? a.home : a.home;
     marks.push({ lon, lat, title: `Jin supply convoy for the ${a.name}, ${cv.food} days of food, going to ${graph.site(dest).name}` });
   }
