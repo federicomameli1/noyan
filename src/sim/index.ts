@@ -10,6 +10,7 @@ export * from "./game";
 export * from "./jin";
 export * from "./battle";
 export * from "./booty";
+export * from "./columns";
 export * from "./country";
 export * from "./events";
 export * from "./goals";

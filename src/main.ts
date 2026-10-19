@@ -1,7 +1,7 @@
 import "./style.css";
 import {
-  HERDERS_REGROW, HORSE_PRICE, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, columnPosition, conditionBand, dateOf, distanceKm, dropFlock, effectivePace,
-  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, mongolGround, orderForage, orderRemounts, orderSack, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  HERDERS_REGROW, HORSE_PRICE, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -456,6 +456,20 @@ function treasuryText(c: Column) {
   return `<p class="note">${parts.join(" · ")}</p>${button}`;
 }
 
+/** Dividing the column, and joining it with another standing at the same place. */
+function splitButtons(c: Column) {
+  const other = companionColumn(game, c, active);
+  const split = canSplit(c);
+  const buttons: string[] = [];
+  if (split) {
+    buttons.push(`<button id="split-half" title="Two columns, each with half the men, each with its own orders">Divide in two</button>`);
+    if (c.men >= DEFEAT_MEN + 1000) buttons.push(`<button id="split-1000" title="A detachment of ${fmt(1000)} men marches off on its own">Detachment of 1,000</button>`);
+  }
+  if (other >= 0) buttons.push(`<button id="merge" title="Join the two columns into one">Join ${game.columns[other].name}</button>`);
+  if (!buttons.length) return "";
+  return `<div class="seg" role="group" aria-label="Divide the column">${buttons.join("")}</div>`;
+}
+
 function renderColumn() {
   const c = col();
   const camp = campSite(c);
@@ -506,6 +520,7 @@ function renderColumn() {
       ${herdersHere > 0 ? `<div class="seg" role="group" aria-label="Sheep from the herders" title="The allied herders give their sheep for free">
         ${herdersHere > 500 ? `<button data-herd="500">+500</button>` : ""}${herdersHere > 1000 ? `<button data-herd="1000">+1,000</button>` : ""}<button data-herd="all">All ${fmt(herdersHere)}</button>
       </div>` : ""}
+      ${splitButtons(c)}
     </div>
     <p class="outlook">${outlookText()}</p>
     <p class="hint">${c.sheep > 0 ? "The flock sets the pace. Leave it somewhere to march faster." : PACE_HINT[pace]}${speedFactor(c) < 1 ? `. Tired or thin horses: ${Math.round(PACES[pace].marchHours * PACES[pace].kmPerHour * speedFactor(c))} km a day.` : ""}</p>`);
@@ -526,6 +541,14 @@ function renderColumn() {
   panel.querySelector<HTMLButtonElement>("#remounts")?.addEventListener("click", () => {
     const n = remountsAffordable(game);
     if (orderRemounts(game, active, n)) { render(); setPlaying(true); }
+  });
+  panel.querySelector<HTMLButtonElement>("#split-half")?.addEventListener("click", () => { orderSplit(game, active, Math.floor(col().men / 2)); render(); });
+  panel.querySelector<HTMLButtonElement>("#split-1000")?.addEventListener("click", () => { orderSplit(game, active, 1000); render(); });
+  panel.querySelector<HTMLButtonElement>("#merge")?.addEventListener("click", () => {
+    const other = companionColumn(game, col(), active);
+    if (other < 0) return;
+    if (orderMerge(game, active, other) && other < active) active -= 1;
+    render();
   });
 }
 
