@@ -86,6 +86,15 @@ describe("a town taken back by the Jin", () => {
     expect(s.cities.fenzhou.taken).toBe(true);
   });
 
+  it("a town the column has left is taken back when the army arrives", () => {
+    const s = calledOn();
+    // the column rides away before the army arrives
+    Object.assign(col(s), { at: "huozhou", men: 5000, horses: 20000, rations: 1e9 });
+    days(s, 8);
+    expect(s.cities.fenzhou.taken).toBe(false);
+    expect(s.log.some(l => l.text.includes("Fenzhou is taken back"))).toBe(true);
+  });
+
   it("the retake can be done directly, when the game needs it", () => {
     const s = calledOn();
     retakeCity(s, "fenzhou", army(s));

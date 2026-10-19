@@ -328,19 +328,8 @@ function stepConvoys(s: GameState, marching: boolean) {
 
 /** An army reaches the end of its route. */
 function arrive(s: GameState, a: JinArmy, site: string) {
-  if (a.order === "relieve" && site === a.target) {
-    const city = s.cities[site];
-    if (!city || city.taken) return;
-    // a column besieges the city: it must fight the relief army or lift the siege
-    const ci = s.columns.findIndex(c => c.siege === site && c.men > 0);
-    if (ci >= 0 && !s.threat) {
-      a.order = "hold";
-      s.threat = { kind: "relief", column: ci, army: s.jin.indexOf(a), hour: s.hour };
-      log(s, `The ${a.name} reaches ${graph.site(site).name}, and the garrison makes ready to sally. Fight them, or lift the siege.`, "alert");
-      return;
-    }
-    enterCity(s, a, site);
-  } else if (a.order === "call" && site === a.target) {
+  // a town the Mongols hold: the army calls on it, and takes it if nobody stands in it
+  if (s.cities[site]?.taken) {
     const ci = s.columns.findIndex(c => c.at === site && c.men > 0);
     if (ci >= 0) {
       // a column stands in the town: the walls are its own, if it holds them
@@ -353,6 +342,20 @@ function arrive(s: GameState, a: JinArmy, site: string) {
     }
     // nobody stands in the town: the Jin take it back
     retakeCity(s, site, a);
+    return;
+  }
+  if (a.order === "relieve" && site === a.target) {
+    const city = s.cities[site];
+    if (!city || city.taken) return;
+    // a column besieges the city: it must fight the relief army or lift the siege
+    const ci = s.columns.findIndex(c => c.siege === site && c.men > 0);
+    if (ci >= 0 && !s.threat) {
+      a.order = "hold";
+      s.threat = { kind: "relief", column: ci, army: s.jin.indexOf(a), hour: s.hour };
+      log(s, `The ${a.name} reaches ${graph.site(site).name}, and the garrison makes ready to sally. Fight them, or lift the siege.`, "alert");
+      return;
+    }
+    enterCity(s, a, site);
   } else if (a.order === "raid" && site === a.target) {
     const st = s.sites[site];
     if (!columnAt(s, site)) {
