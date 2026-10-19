@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONVOY_EVERY, CONVOY_FOOD, CONVOY_GRAIN_DAYS, CONVOY_RATIONS_SHARE, HUNGER_DESERTION, HUNGER_MORALE, JIN_FOOD_DAYS, MAX_RATION_DAYS } from "./constants";
+import { CONVOY_EVERY, CONVOY_FOOD, CONVOY_GRAIN_DAYS, CONVOY_KM_PER_DAY, CONVOY_RATIONS_SHARE, HUNGER_DESERTION, HUNGER_MORALE, JIN_FOOD_DAYS, MAX_RATION_DAYS } from "./constants";
 import { newGame, step, type GameState } from "./game";
 import { armyMen, jinDecide } from "./jin";
 import { makeSave, readSave } from "./save";
@@ -44,7 +44,7 @@ describe("food in the field", () => {
 });
 
 describe("convoys", () => {
-  it("set out every five days, travel at about 15 km a day and refill the army on arrival", () => {
+  it("set out every five days, travel at about a day's march and refill the army on arrival", () => {
     const s = newGame();
     place(s, 0, "huozhou");
     const a = army(s);
@@ -57,7 +57,7 @@ describe("convoys", () => {
     expect(cv.at).toBe("pingyang");
     expect(cv.food).toBe(CONVOY_FOOD);
     days(s, 1);
-    expect(cv.leg!.done).toBeCloseTo(15, 0); // CONVOY_KM_PER_DAY on a road
+    expect(cv.leg!.done).toBeCloseTo(CONVOY_KM_PER_DAY, 0); // on a road
     for (let i = 0; i < 20 && s.convoys.includes(cv); i++) days(s, 1);
     expect(s.convoys).not.toContain(cv);
     // refilled on arrival: at most one night's ration has been eaten since

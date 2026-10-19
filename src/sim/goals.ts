@@ -45,7 +45,6 @@ const cityName = (id: string) => SCENARIO.graph.site(id).name;
 const citiesTaken = (s: GameState) => Object.values(s.cities).filter(c => c.taken).length;
 const menInField = (s: GameState) => s.columns.reduce((n, c) => n + c.men, 0);
 const horsesInField = (s: GameState) => s.columns.reduce((n, c) => n + c.horses, 0);
-const armiesBroken = (s: GameState) => s.wins;
 
 export const AIMS: readonly Aim[] = [
   {
@@ -65,12 +64,16 @@ export const AIMS: readonly Aim[] = [
   },
   {
     id: "army",
-    name: "Break a Jin army in the open",
+    name: "Break a Jin army",
     desc: "The army that relieved the city will come north to take back what was won. Break it, or it breaks you.",
     decisive: true,
     atEnd: false,
-    met: s => armiesBroken(s) > 0,
-    status: s => (armiesBroken(s) > 0 ? `${armiesBroken(s)} ${armiesBroken(s) === 1 ? "army" : "armies"} broken` : "no army broken yet"),
+    // the armies broken before this order was given do not count: the Jin must be broken again
+    met: s => s.wins > s.winsAtDispatch,
+    status: s => {
+      const broken = s.wins - s.winsAtDispatch;
+      return broken > 0 ? `${broken} ${broken === 1 ? "army" : "armies"} broken` : "no army broken yet";
+    },
   },
   {
     id: "south",
@@ -136,7 +139,7 @@ export const DISPATCHES: readonly Dispatch[] = [
     deadline: { year: 1219, month: 1, day: 28, hour: 0 },
     title: "The second letter",
     letter: "The Jin will come north now that their city is gone, and they will take back what you have won unless you break them. "
-      + "Break a Jin army in the open, Muqali, and the country behind you will stay quiet. The thaw is in March: you have until then.",
+      + "Break a Jin army, Muqali, and the country behind you will stay quiet. The thaw is in March: you have until then.",
   },
   {
     aim: "south",
@@ -165,6 +168,15 @@ export function currentAim(s: GameState): Aim | null {
 export function dispatchMet(s: GameState): boolean {
   const aim = currentAim(s);
   return !!aim && aim.met(s);
+}
+
+/** The place the current order asks the column to take, if it asks for one. */
+export function objectiveOf(s: GameState): string | null {
+  const aim = currentAim(s);
+  if (!aim) return null;
+  if (aim.id === "capital") return SCENARIO.objective;
+  if (aim.id === "south") return "fenzhou";
+  return null;
 }
 
 /** True when the aim is met. An aim judged at the end counts only when the campaign is over. */
@@ -234,6 +246,8 @@ function miss(s: GameState) {
 function giveNextLetter(s: GameState) {
   const d = currentDispatch(s);
   if (!d) return;
+  // the armies broken so far do not count for this order
+  s.winsAtDispatch = s.wins;
   const aim = AIMS.find(a => a.id === d.aim)!;
   log(s, `A letter from the khan. ${d.title}: ${d.letter} The order must be done by ${formatDate(d.deadline)}.`, "arrival");
   log(s, `New order: ${aim.name}. ${aim.desc}`, "arrival");

@@ -120,7 +120,35 @@ reach of the enemy.
 | the raiders take of the herders' sheep | half | the remount herds are worth a raid [S] |
 | the Jin garrison left in a town taken back | half the army | enough to hold it, not to besiege it [S] |
 
-## 5. What this needs in the code
+## 5. What the playtest found
+
+The campaign is played to the end by a noyan with a policy (`src/sim/campaign.test.ts`),
+and the first runs showed what was wrong with the design as it was first written.
+
+- **The Jin armies were starving, and the war was no war.** The wagon convoys moved at
+  15 km a day while the armies they fed moved at 20: an army in the field could never
+  be fed, and every Jin army died of hunger within a month. The convoys now move at
+  24 km a day, enough to keep up, and the Jin can put their weight into the war.
+- **The second order was fulfilled the moment it was given.** The khan asks for a Jin
+  army to be broken; the column had already broken one before the letter came. The
+  armies broken before an order count for nothing: the order wants a *new* army
+  broken.
+- **The column was starving, not fighting.** Three orders mean three sieges, and a
+  siege is a long stand with the grass eaten around the camp. The towns now feed a
+  column for 45 days instead of 30, and the war is won by the noyan who forages on
+  the way, sacks the towns he takes and brings the sheep.
+- **The villages' theft was a slow poison.** Villagers at hostility above 70 stole
+  0.2% of the herd every night, which in a long siege took the horses faster than
+  the grass could feed them. Now they take half as much.
+- **A column that no longer exists kept playing.** A column of one man still laid
+  sieges and was still attacked. A column with fewer than a thousand men cannot
+  besiege a city any more, and a column of a few dozen men is not worth attacking.
+
+With those fixed, the careful noyan wins the campaign on day 140 with two towns in
+his hands and a khan well satisfied, and the noyan who only marches and fights loses
+it at the thaw. Both results are in the tests.
+
+## 6. What this needs in the code
 
 - `src/sim/goals.ts`: the dispatches, the favour, the order in which they are fulfilled.
 - `src/sim/game.ts`: the state (the current dispatch, the favour), the town changing
@@ -132,10 +160,22 @@ reach of the enemy.
 - `src/main.ts`: the letters, the favour, the new buttons.
 - `src/sim/campaign.test.ts`: the whole campaign, played with different policies.
 
-## 6. How it will be tried out
+## 7. How it will be tried out
 
-- The campaign test plays the whole campaign with three policies: straight to the city,
-  cautious (forage before moving), and defensive (keep a garrison in the towns taken).
-  Each has to end in a result, and none of them may crash.
-- The balance is read from those runs: the dispatch deadlines are the numbers to tune.
-- Every new rule has a test of its own, and the save validator has to know the new state.
+- The campaign test plays the whole campaign with two policies: the one that only
+  marches and fights, and the one that forages, sacks the towns and chooses its
+  battles by the odds. The careful one must win, the other must lose, and neither
+  may crash.
+- The balance is read from those runs: the deadlines and the numbers of the Jin
+  reserves are the numbers to tune.
+- Every new rule has a test of its own, and the save validator has to know the new
+  state.
+
+## 8. What is left for the layer 3
+
+The war is now two-way, but it is still fought in one region, with one army and one
+road. The next step, when there is time for it, is a second region: the march on
+Zhongdu in 1219, with the map of its own, the roads south of the Taiyuan basin and
+the Jin court at the end of them. The pre-projected geography is already there for
+the whole of northern China, so what it needs is a new graph of places and links, a
+new scenario and a new balance: a layer of its own, not an extension of this one.

@@ -6,7 +6,7 @@ import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
-import { checkDispatches, DISPATCHES } from "./goals";
+import { checkDispatches, currentAim, DISPATCHES } from "./goals";
 import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { bootyOf, stepBooty } from "./booty";
@@ -155,6 +155,8 @@ export interface GameState {  /** hours since the start of the scenario */
   dispatch: number;
   /** the khan's favour, 0 to 100 */
   favour: number;
+  /** the Jin armies broken when the current order was given: they do not count for it */
+  winsAtDispatch: number;
   /** the orders of the khan fulfilled, and the ones missed */
   dispatchesMet: number;
   dispatchesMissed: number;
@@ -243,7 +245,7 @@ export function newGame(sheep = 0): GameState {
   }
   const first = DISPATCHES[0];
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, dispatchesMet: 0, dispatchesMissed: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, winsAtDispatch: 0, dispatchesMet: 0, dispatchesMissed: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [
       { hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Spies say the Jin are gathering an army at Pingyang, in the south.` },
       { hour: 0, text: `A letter from the khan. ${first.title}: ${first.letter} The order must be done by ${formatDate(first.deadline)}.` },
@@ -277,6 +279,9 @@ export function speedFactor(c: Column): number {
 export function isMoving(c: Column): boolean {
   return !c.halted && (c.leg !== null || c.route.length > 0) && c.men > 0;
 }
+
+/** True if the column is still an army: with fewer men than that it cannot campaign. */
+export const isArmy = (c: Column) => c.men >= R.DEFEAT_MEN;
 
 /** The site whose pasture the column uses: where it stands, or the nearer end of its leg. */
 export function campSite(c: Column): Site {
@@ -467,7 +472,7 @@ export function siegeDays(s: GameState, c: Column, id: string): number {
 export const stormCost = (city: CityState) => Math.round(city.garrison * city.walls * (1 - city.progress / 100) * R.STORM_COST);
 
 /** Can this column besiege the city where it stands? */
-export const canBesiege = (s: GameState, c: Column) => !!c.at && !!s.cities[c.at] && !s.cities[c.at].taken && c.siege !== c.at;
+export const canBesiege = (s: GameState, c: Column) => !!c.at && !!s.cities[c.at] && !s.cities[c.at].taken && c.siege !== c.at && isArmy(c);
 
 export function orderSiege(s: GameState, ci: number): boolean {
   const c = s.columns[ci];
@@ -619,7 +624,7 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   const city = s.cities[site.id];
   if (garrisonLost && city) city.garrison = Math.max(0, city.garrison - garrisonLost);
   a.morale = clamp(a.morale + b.r.morale.jin, 0, 100);
-  // a Jin army broken in the open: the war aims count it
+  // a Jin army beaten in the field, at the walls or in the open: the war aims count it
   if (b.r.outcome === "rout" || b.r.outcome === "victory") s.wins += 1;
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
@@ -821,7 +826,8 @@ function checkEnd(s: GameState) {
   } else if (s.hour >= totalHours()) {
     s.result = "defeat";
     s.over = true;
-    log(s, `Defeat: spring has come and ${graph.site(SCENARIO.objective).name} still stands.`, "alert");
+    const aim = currentAim(s);
+    log(s, `Defeat: the thaw has come, and ${aim ? aim.name.toLowerCase() : "the last order"} is not done.`, "alert");
   }
 }
 

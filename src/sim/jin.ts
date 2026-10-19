@@ -206,7 +206,7 @@ export function stepJin(s: GameState, hourOfDay: number) {
   if (!s.threat) {
     for (const [ai, a] of s.jin.entries()) {
       if (a.order !== "attack" || !a.at || armyMen(a) <= 0) continue;
-      const ci = s.columns.findIndex(c => c.at === a.at && c.men > 0);
+      const ci = s.columns.findIndex(c => c.at === a.at && c.men >= R.RAID_MIN_MEN);
       if (ci < 0) continue;
       // a column in a town the Mongols hold is attacked at its walls: hold them, or give the town up
       const town = game_town(s, a.at);
@@ -485,7 +485,7 @@ function decideAttack(s: GameState, a: JinArmy): boolean {
   if (a.inCity) return false;
   const [lon, lat] = armyPosition(a);
   const targets = s.columns
-    .filter(c => c.men > 0 && distanceKm(lon, lat, ...columnPosition(c)) <= R.JIN_SIGHT_KM && attackEstimate(s, a, c) >= R.JIN_ATTACK_RATIO)
+    .filter(c => c.men >= R.RAID_MIN_MEN && distanceKm(lon, lat, ...columnPosition(c)) <= R.JIN_SIGHT_KM && attackEstimate(s, a, c) >= R.JIN_ATTACK_RATIO)
     .map(c => campSite(c).id);
   const to = nearestByRoad(s, a, targets);
   if (to) { go(s, a, to, "attack"); return true; }

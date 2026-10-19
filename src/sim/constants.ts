@@ -99,7 +99,7 @@ export const ENGINEER_FACTOR = 2;
 /** men lost storming a city: garrison x walls x (1 - progress/100) x STORM_COST [S] */
 export const STORM_COST = 0.11;
 /** most days of rations a column can carry away from a taken city [S] */
-export const MAX_RATION_DAYS = 30;
+export const MAX_RATION_DAYS = 45;
 /** with fewer men the column can no longer campaign: the game is lost [S] */
 export const DEFEAT_MEN = 1000;
 
@@ -161,8 +161,8 @@ export const JIN_FOOD_DAYS = 20;
 export const CONVOY_EVERY = 5;
 /** days of food a convoy brings [S] */
 export const CONVOY_FOOD = 10;
-/** km a day a wagon convoy makes, during the Jin marching hours [S] */
-export const CONVOY_KM_PER_DAY = 15;
+/** km a day a wagon convoy makes, during the Jin marching hours: enough to keep up with an army [S] */
+export const CONVOY_KM_PER_DAY = 24;
 /** share of a captured convoy's food the Mongols can use as rations [S] */
 export const CONVOY_RATIONS_SHARE = 0.5;
 /** days of grain for the horses found in a captured convoy [S] */
@@ -235,6 +235,8 @@ export const MORALE_ROUT = -35;
 export const BATTLE_SEED = 1218;
 /** a Jin army attacks when it judges itself at least this strong against a column [S] */
 export const JIN_ATTACK_RATIO = 1.3;
+/** fewest men a column may have and still be worth attacking [S] */
+export const RAID_MIN_MEN = 100;
 /** a Jin army whose morale falls below this has had enough: it goes home [S] */
 export const JIN_RETREAT_MORALE = 30;
 /** a column can ride away from a Jin army only on horses in better condition than this [S] */
@@ -277,7 +279,7 @@ export const HOSTILITY_COOLING = 1;
 export const HIDE_HOSTILITY = 50;
 /** above this they steal horses at night: share of the herd [S] */
 export const THEFT_HOSTILITY = 70;
-export const HORSE_THEFT = 0.002;
+export const HORSE_THEFT = 0.001;
 /** share of the meat that can be eaten when a whole flock is slaughtered at once [S] */
 export const SLAUGHTER_SHARE = 0.5;
 

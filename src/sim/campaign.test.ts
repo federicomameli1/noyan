@@ -1,58 +1,124 @@
 import { describe, expect, it } from "vitest";
-import { newGame, orderMarch, orderSiege, orderStorm, step, type GameState } from "./game";
-import { totalHours } from "./game";
-
-const col = (s: GameState) => s.columns[0];
+import { forageBlock, orderForage } from "./country";
+import { orderSack } from "./booty";
+import { orderSplit } from "./columns";
+import { objectiveOf } from "./goals";
+import {
+  battleInput, battleOdds, canAttack, foodDays, isArmy, newGame, orderAttack, orderFight, orderMarch, orderRefuse,
+  orderSiege, orderStorm, orderSurrender, step, stormFails, totalHours, type GameState,
+} from "./game";
 
 /**
- * A simple noyan: march on Taiyuan, besiege it, and storm the walls when the siege
- * has gone on long enough. It is not a good player, but it plays the whole campaign.
+ * The noyan of the tests: it plays the whole campaign with a policy.
+ * "direct" goes straight for what the khan asks, eats what it finds and fights every battle.
+ * "careful" forages, sacks the towns it takes, chooses its battles by the odds, and hunts the
+ * Jin armies when there is no place to take.
  */
-function play(campaign: GameState) {
-  let stalled = 0;
-  while (!campaign.over && campaign.hour < totalHours()) {
-    const c = col(campaign);
+type Policy = "direct" | "careful";
+
+function play(policy: Policy, sheep = 6000): GameState {
+  const s = newGame(sheep);
+  let target: string | null = null;
+  let stall = 0;
+  while (!s.over && s.hour < totalHours()) {
+    const c = s.columns.filter(isArmy).sort((a, b) => b.men - a.men)[0] ?? s.columns[0];
+    const ci = s.columns.indexOf(c);
     if (c.men > 0) {
-      if (c.at !== "taiyuan") {
-        orderMarch(campaign, 0, "taiyuan");
-        stalled = 0;
-      } else if (!c.siege) {
-        orderSiege(campaign, 0);
-        stalled = 0;
-      } else {
-        stalled += 1;
-        // after a month of siege, storm the walls
-        if (stalled > 30) orderStorm(campaign, 0);
+      const obj = objectiveOf(s);
+      const hungry = foodDays(c) < 30 && c.at && !c.foraging && !forageBlock(s, c, "requisition");
+      if (policy === "careful" && hungry) {
+        orderForage(s, ci, "requisition");
+      } else if (!obj && policy === "careful") {
+        // no place to take: hunt the Jin armies
+        const foe = s.jin.filter(a => a.foot + a.horse > 0).sort((a, b) => b.foot + b.horse - a.foot - a.horse)[0];
+        if (foe?.at && c.at !== foe.at) { orderMarch(s, ci, foe.at); target = foe.at; }
+      } else if (obj) {
+        if (c.at !== obj) {
+          if (target !== obj) { orderMarch(s, ci, obj); target = obj; }
+          stall = 0;
+        } else if (!c.siege) {
+          orderSiege(s, ci);
+          stall = 0;
+        } else {
+          stall += 1;
+          if (stall > 45 && !stormFails(c, s.cities[obj])) orderStorm(s, ci);
+        }
+      }
+      // the goods of a town taken are worth the horses they buy
+      if (policy === "careful" && c.at && s.cities[c.at]?.taken && !s.cities[c.at].sacked) orderSack(s, ci);
+    }
+    for (let h = 0; h < 24 && !s.over; h++) {
+      step(s);
+      answer(s, policy);
+      // a Jin army standing with the column is attacked when the odds are good
+      if (policy === "careful") {
+        const c2 = s.columns.filter(isArmy).sort((a, b) => b.men - a.men)[0];
+        if (c2) {
+          const foe = canAttack(s, s.columns.indexOf(c2));
+          if (foe && ["rout", "victory"].includes(battleOdds(battleInput(s, c2, foe)).even.outcome)) {
+            orderAttack(s, s.columns.indexOf(c2));
+          }
+        }
       }
     }
-    for (let h = 0; h < 24 && !campaign.over; h++) step(campaign);
   }
+  return s;
+}
+
+/** Answers the army that is upon the column, the way a player would: with the odds in mind. */
+function answer(s: GameState, policy: Policy) {
+  const t = s.threat;
+  if (!t) return;
+  const c = s.columns[t.column], a = s.jin[t.army];
+  if (t.kind === "call") {
+    // the Jin call on a town: hold the walls if the odds are good, give the town up if not
+    const odds = battleOdds(battleInput(s, c, a, 0, 2)).even.outcome;
+    if (policy === "direct" || ["defeat", "disaster"].includes(odds)) orderSurrender(s);
+    else orderFight(s);
+    return;
+  }
+  const odds = battleOdds(battleInput(s, c, a)).even.outcome;
+  if (policy === "direct" || ["rout", "victory", "draw"].includes(odds)) orderFight(s);
+  else orderRefuse(s);
 }
 
 describe("a whole campaign", () => {
-  it("ends with a result, and nothing throws on the way", () => {
-    const s = newGame();
-    play(s);
+  it("the careful noyan wins the war in Shanxi, with the towns still in his hands", () => {
+    const s = play("careful");
     expect(s.over).toBe(true);
-    expect(s.result).not.toBeNull();
+    expect(s.result).toBe("victory");
+    expect(s.dispatchesMet).toBe(3);
+    expect(s.dispatchesMissed).toBe(0);
+    expect(s.favour).toBeGreaterThanOrEqual(90);
+    // the towns taken are still Mongol hands at the end
+    expect(Object.values(s.cities).filter(c => c.taken).length).toBeGreaterThanOrEqual(2);
+    expect(s.log.some(l => l.text.startsWith("Victory"))).toBe(true);
   });
 
-  it("a column that marches straight on Taiyuan can take it", () => {
-    const s = newGame();
-    play(s);
-    // the campaign is decided one way or the other, and the city is the reason
-    if (s.result === "victory") {
-      expect(s.cities.taiyuan.taken).toBe(true);
-      expect(s.log.some(l => l.text.startsWith("Victory"))).toBe(true);
-    } else {
-      expect(s.log.at(-1)!.text).toMatch(/Defeat/);
-    }
+  it("the noyan who only marches and fights loses the campaign to the thaw", () => {
+    const s = play("direct");
+    expect(s.over).toBe(true);
+    expect(s.result).toBe("defeat");
+    expect(s.log.at(-1)!.text).toMatch(/Defeat/);
   });
 
-  it("the Jin send their reserves, and the siege is relieved at least once", () => {
+  it("the orders of the khan are the same in every campaign", () => {
+    const s = play("careful");
+    expect(s.log.some(l => l.text.includes("A letter from the khan"))).toBe(true);
+    expect(s.log.filter(l => l.text.includes("A letter from the khan")).length).toBe(3);
+  });
+
+  it("a column with no men cannot besiege a city", () => {
     const s = newGame();
-    play(s);
-    expect(s.jinArrived).toBeGreaterThan(0);
-    expect(s.jin.length).toBeGreaterThan(2);
+    s.columns[0].men = 100;
+    expect(orderSiege(s, 0)).toBe(false);
+  });
+
+  it("the campaign can be divided and joined again without breaking", () => {
+    const s = play("careful");
+    expect(s.columns.length).toBeGreaterThan(0);
+    const before = s.columns.reduce((n, c) => n + c.men, 0);
+    orderSplit(s, 0, 1000);
+    expect(s.columns.reduce((n, c) => n + c.men, 0)).toBe(before);
   });
 });

@@ -235,7 +235,7 @@ describe("sieges", () => {
   it("a long winter siege at Taiyuan starves the horses", () => {
     const s = fed("normal", 90, "taiyuan"); // from 30 November
     orderSiege(s, 0);
-    days(s, 35);
+    days(s, 45);
     expect(s.cities.taiyuan.taken).toBe(false);
     expect(col(s).condition).toBeLessThan(40);
   });
