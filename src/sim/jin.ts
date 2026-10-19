@@ -8,6 +8,7 @@ import * as R from "./constants";
 import { strength } from "./battle";
 import { distanceKm, findPath, type Site } from "./graph";
 import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg, type Mover } from "./game";
+import { daysBetween } from "./calendar";
 import { SCENARIO, type JinArmySpec } from "./scenario";
 
 const graph = SCENARIO.graph;
@@ -54,6 +55,8 @@ export interface JinArmy {
   reported: number;
   /** days of food left: field armies eat their stores, raiders live off the land */
   food: number;
+  /** the city this army goes to relieve, and after how many days of siege: kept in the state, so the army needs no name to be found */
+  relieve?: { city: string; afterDays: number; orWhenTaken?: string };
 }
 
 /** A Jin wagon convoy carrying food from a home city to an army in the field. `army` indexes `s.jin`. */
@@ -63,12 +66,17 @@ export interface Convoy extends Mover {
   food: number;
 }
 
-export function newJin(): JinArmy[] {
-  return SCENARIO.jin.map(j => ({
+/** A Jin army as it stands in the state. */
+export function newJinArmy(j: JinArmySpec): JinArmy {
+  return {
     name: j.name, kind: j.kind, foot: j.foot, horse: j.horse, quality: j.quality, morale: j.morale, kmPerDay: j.kmPerDay, home: j.home,
     at: j.home, leg: null, cameFrom: null, route: [], order: "hold", target: null, inCity: false, sight: 0, seen: null, reported: 0,
-    food: j.kind === "field" ? R.JIN_FOOD_DAYS : 0,
-  }));
+    food: j.kind === "field" ? R.JIN_FOOD_DAYS : 0, relieve: j.relieve,
+  };
+}
+
+export function newJin(): JinArmy[] {
+  return SCENARIO.jin.map(newJinArmy);
 }
 
 export const armyMen = (a: { foot: number; horse: number }) => a.foot + a.horse;
@@ -336,8 +344,8 @@ function arrive(s: GameState, a: JinArmy, site: string) {
 /** Jin towns still holding, where an army can shelter, and the army's own home. */
 function refuges(s: GameState, a: JinArmy): string[] {
   const towns = Object.entries(s.cities).filter(([, c]) => !c.taken && c.type !== "fortress").map(([id]) => id);
-  const spec = SCENARIO.jin.map(j => j.home);
-  return [...new Set([...towns, ...spec, a.home])].filter(id => !s.cities[id]?.taken);
+  const homes = [...SCENARIO.jin, ...SCENARIO.jinReserves].map(j => j.home);
+  return [...new Set([...towns, ...homes, a.home])].filter(id => !s.cities[id]?.taken);
 }
 
 /** Where the army goes back to: its home, or the nearest Jin town if its home has fallen. */
@@ -391,12 +399,27 @@ function knownFlocks(s: GameState, a: JinArmy): string[] {
 /** Once a day, at midnight: the convoys run and the food is counted, then each army chooses what to do. */
 export function jinDecide(s: GameState) {
   supplyDay(s);
+  jinReserves(s);
   for (const a of s.jin) {
     if (armyMen(a) <= 0) continue;
     if (decideAttack(s, a)) continue;
-    if (a.kind === "field") decideField(s, a, SCENARIO.jin.find(j => j.name === a.name)!);
+    if (a.kind === "field") decideField(s, a);
     else decideRaiders(s, a);
   }
+}
+
+/**
+ * The war effort of the Jin: on the day given, the dynasty sends another army from the south.
+ * The army appears at its home town and works like the others: it marches, it relieves, it fights.
+ */
+export function jinReserves(s: GameState) {
+  const next = SCENARIO.jinReserves[s.jinArrived];
+  if (!next) return;
+  if (s.hour < daysBetween(SCENARIO.start, next.date) * 24) return;
+  s.jinArrived += 1;
+  const a = newJinArmy(next);
+  s.jin.push(a);
+  log(s, `The Jin send another army: the ${a.name}, ${fmt(armyMen(a))} men, marches out of ${graph.site(a.home).name}.`, "alert");
 }
 
 /** How strong the army judges itself against a column, fighting where the column camps: above 1 it thinks it wins. */
@@ -441,12 +464,13 @@ export function goHome(s: GameState, a: JinArmy) {
   go(s, a, home(s, a), "return");
 }
 
-function decideField(s: GameState, a: JinArmy, spec: JinArmySpec) {
-  if (a.inCity || !spec.relieve) return;
-  const goal = spec.relieve.city, city = s.cities[goal];
+function decideField(s: GameState, a: JinArmy) {
+  const spec = a.relieve;
+  if (a.inCity || !spec) return;
+  const goal = spec.city, city = s.cities[goal];
   if (a.order === "hold" && a.at === a.home) {
-    const trigger = spec.relieve.orWhenTaken ? s.cities[spec.relieve.orWhenTaken]?.taken : false;
-    if (!city.taken && (city.besiegedDays >= spec.relieve.afterDays || trigger)) go(s, a, goal, "relieve");
+    const trigger = spec.orWhenTaken ? s.cities[spec.orWhenTaken]?.taken : false;
+    if (!city.taken && (city.besiegedDays >= spec.afterDays || trigger)) go(s, a, goal, "relieve");
     return;
   }
   if (a.order === "relieve") {

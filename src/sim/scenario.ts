@@ -123,6 +123,11 @@ export interface JinArmySpec {
   relieve?: { city: string; afterDays: number; orWhenTaken?: string };
 }
 
+/** An army the Jin send as the war goes on: it sets out on the day given. */
+export interface JinReserveSpec extends JinArmySpec {
+  date: GameDate;
+}
+
 export interface ColumnSpec { name: string; men: number; horsesPerMan: number; rationsPerMan: number; condition: number }
 
 export const SCENARIO = {
@@ -150,6 +155,23 @@ export const SCENARIO = {
     },
     { name: "Jin frontier horse", kind: "raiders", foot: 0, horse: 1200, quality: 1, morale: 60, kmPerDay: 35, home: "xinzhou" },
   ] as JinArmySpec[],
+  /**
+   * The war effort of the Jin: as the campaign goes on, the dynasty sends more armies from the
+   * south. Each one marches out on the day given, from its home town, and relieves Taiyuan if
+   * the column is still besieging it. Numbers are mine [S].
+   */
+  jinReserves: [
+    {
+      name: "Jin reserve army", kind: "field", foot: 5000, horse: 1000, quality: 0.8, morale: 55, kmPerDay: 20, home: "pingyang",
+      date: { year: 1218, month: 9, day: 26, hour: 0 } satisfies GameDate,
+      relieve: { city: "taiyuan", afterDays: 12 },
+    },
+    {
+      name: "Jin northern host", kind: "field", foot: 4000, horse: 2500, quality: 1.1, morale: 60, kmPerDay: 25, home: "fenzhou",
+      date: { year: 1218, month: 11, day: 5, hour: 0 } satisfies GameDate,
+      relieve: { city: "taiyuan", afterDays: 10 },
+    },
+  ] as JinReserveSpec[],
   /** Jin strongholds that can be besieged: type, garrison, stores in days, and walls when they differ from the type [S] */
   cities: {
     daizhou: { type: "town", garrison: 1000, stores: 40 },

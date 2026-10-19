@@ -5,22 +5,21 @@ import { newGame, orderSiege, step, type GameState } from "./game";
 
 const col = (s: GameState) => s.columns[0];
 const hours = (s: GameState, n: number) => { for (let i = 0; i < n; i++) step(s); };
-const days = (s: GameState, n: number) => hours(s, n * 24);
 
-/** A column that has taken Daizhou, with the town emptied of its garrison. */
-function afterTaking(s: GameState, id: string): GameState {
-  const s2 = newGame();
-  Object.assign(col(s2), { at: id, men: 5000, horses: 10000, rations: 1e9 });
-  orderSiege(s2, 0);
-  for (let i = 0; i < 60 * 24 && !s2.cities[id].taken; i++) step(s2);
-  s2.over = false;
-  s2.result = null;
-  return s2;
+/** A column that has taken a town, with the town emptied of its garrison. */
+function afterTaking(id: string): GameState {
+  const s = newGame();
+  Object.assign(col(s), { at: id, men: 5000, horses: 10000, rations: 1e9 });
+  orderSiege(s, 0);
+  for (let i = 0; i < 60 * 24 && !s.cities[id].taken; i++) step(s);
+  s.over = false;
+  s.result = null;
+  return s;
 }
 
 describe("booty", () => {
   it("a fallen town holds goods, and sacking them fills the treasury", () => {
-    const s = afterTaking(newGame(), "daizhou");
+    const s = afterTaking("daizhou");
     expect(s.cities.daizhou.taken).toBe(true);
     expect(s.cities.daizhou.booty).toBe(bootyOf(s.cities.daizhou.garrison));
     expect(s.treasury).toBe(0);
@@ -32,7 +31,7 @@ describe("booty", () => {
   });
 
   it("sacking a town makes the countryside around it angry", () => {
-    const s = afterTaking(newGame(), "daizhou");
+    const s = afterTaking("daizhou");
     const before = s.sites.daizhou.hostility;
     orderSack(s, 0);
     expect(s.sites.daizhou.hostility).toBeGreaterThan(before);

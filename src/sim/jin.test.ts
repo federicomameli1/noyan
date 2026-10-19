@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dropFlock, newGame, orderMarch, orderRefuse, orderSiege, planRoute, siegeDays, step, type GameState } from "./game";
 import { armyAt, isRelieved, sightLevel } from "./jin";
+import { daysBetween } from "./calendar";
 import { SCENARIO } from "./scenario";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
@@ -148,6 +149,48 @@ describe("the Jin horsemen", () => {
     expect(horse(s).target).not.toBe("xinzhou");
     days(s, 5);
     expect(horse(s).at).not.toBe("xinzhou");
+  });
+});
+
+describe("the war effort of the Jin", () => {
+  it("sends another army from the south on the day given", () => {
+    const s = at("datong");
+    expect(s.jin).toHaveLength(SCENARIO.jin.length);
+    const first = SCENARIO.jinReserves[0];
+    const day = daysBetween(SCENARIO.start, first.date);
+    days(s, day - 1);
+    expect(s.jin).toHaveLength(SCENARIO.jin.length);
+    days(s, 2);
+    expect(s.jin).toHaveLength(SCENARIO.jin.length + 1);
+    const a = s.jin.at(-1)!;
+    expect(a.name).toBe(first.name);
+    expect(a.at).toBe(first.home);
+    expect(a.foot).toBe(first.foot);
+    expect(s.jinArrived).toBe(1);
+    expect(s.log.some(l => l.text.includes("The Jin send another army") && l.kind === "alert")).toBe(true);
+  });
+
+  it("the new army knows which city it is to relieve, without being looked up by name", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    const first = SCENARIO.jinReserves[0];
+    days(s, daysBetween(SCENARIO.start, first.date) + 2);
+    const a = s.jin.at(-1)!;
+    expect(a.relieve).toEqual(first.relieve);
+    // the siege has gone on long enough: the new army sets out for Taiyuan
+    days(s, 3);
+    expect(a.order).toBe("relieve");
+    expect(a.target).toBe("taiyuan");
+  });
+
+  it("sends the second army later, and no more after that", () => {
+    const s = at("datong");
+    const second = SCENARIO.jinReserves[1];
+    days(s, daysBetween(SCENARIO.start, second.date) + 2);
+    expect(s.jin).toHaveLength(SCENARIO.jin.length + SCENARIO.jinReserves.length);
+    expect(s.jinArrived).toBe(SCENARIO.jinReserves.length);
+    days(s, 40);
+    expect(s.jin).toHaveLength(SCENARIO.jin.length + SCENARIO.jinReserves.length);
   });
 });
 

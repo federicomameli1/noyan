@@ -46,7 +46,8 @@ export function readSave(data: unknown): SaveFile {
 
   const g = d.game;
   if (!isObject(g) || !isNumber(g.hour) || g.hour < 0 || !Array.isArray(g.columns) || !g.columns.length
-    || !Array.isArray(g.jin) || g.jin.length !== SCENARIO.jin.length || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
+    || !Array.isArray(g.jin) || g.jin.length < SCENARIO.jin.length || g.jin.length > SCENARIO.jin.length + SCENARIO.jinReserves.length
+    || !isNumber(g.jinArrived) || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
     || !isNumber(g.treasury) || !Array.isArray(g.remounts) || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities)
     || !Array.isArray(g.log) || !isNumber(g.arrived) || !isNumber(g.wins) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;

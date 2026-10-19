@@ -138,6 +138,8 @@ export interface GameState {
   jin: JinArmy[];
   /** Jin wagon convoys feeding the field armies */
   convoys: Convoy[];
+  /** the Jin armies the dynasty has sent as reserves so far */
+  jinArrived: number;
   /** days since convoys were last sent out */
   convoyDay: number;
   /** goods the army holds: they buy remounts */
@@ -232,7 +234,7 @@ export function newGame(sheep = 0): GameState {
     cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0 };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
