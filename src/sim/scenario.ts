@@ -163,12 +163,12 @@ export const SCENARIO = {
   jinReserves: [
     {
       name: "Jin reserve army", kind: "field", foot: 5000, horse: 1000, quality: 0.8, morale: 55, kmPerDay: 20, home: "pingyang",
-      date: { year: 1218, month: 9, day: 26, hour: 0 } satisfies GameDate,
+      date: { year: 1218, month: 8, day: 26, hour: 0 } satisfies GameDate,
       relieve: { city: "taiyuan", afterDays: 12 },
     },
     {
       name: "Jin northern host", kind: "field", foot: 4000, horse: 2500, quality: 1.1, morale: 60, kmPerDay: 25, home: "fenzhou",
-      date: { year: 1218, month: 11, day: 5, hour: 0 } satisfies GameDate,
+      date: { year: 1218, month: 10, day: 5, hour: 0 } satisfies GameDate,
       relieve: { city: "taiyuan", afterDays: 10 },
     },
   ] as JinReserveSpec[],

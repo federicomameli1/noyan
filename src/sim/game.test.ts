@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { blockadeMen, dropFlock, effectivePace, forecast, leaveBlockade, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, sortieCost, step, stormCost, takeFlock, takeFromHerders, type GameState } from "./game";
 import { HERDERS_RESERVE, RATIONS_PER_SHEEP, type PaceId } from "./constants";
+import { SCENARIO } from "./scenario";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
 const col = (s: GameState) => s.columns[0];
@@ -216,6 +217,7 @@ describe("sieges", () => {
   it("storming costs men, less when the siege is advanced, and wins at Taiyuan", () => {
     const s = at("taiyuan");
     s.jin = []; // no relief army: this is about the storm alone
+    s.jinArrived = SCENARIO.jinReserves.length; // and no reserves come
     orderSiege(s, 0);
     const fresh = stormCost(s.cities.taiyuan);
     days(s, 50); // about two thirds of the way
