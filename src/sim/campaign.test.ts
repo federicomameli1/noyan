@@ -6,8 +6,8 @@ import { orderSack } from "./booty";
 import { orderSplit } from "./columns";
 import { objectiveOf } from "./goals";
 import {
-  battleInput, battleOdds, canAttack, foodDays, isArmy, newGame, orderAttack, orderFight, orderMarch, orderRefuse,
-  orderSiege, orderStorm, orderSurrender, step, stormFails, totalHours, type GameState,
+  battleInput, battleOdds, canAttack, foodDays, newGame, orderAttack, orderFight, orderMarch, orderRefuse,
+  orderSiege, orderStorm, orderSurrender, step, stormFails, totalHours, wallsOf, type GameState,
 } from "./game";
 
 /**
@@ -23,8 +23,23 @@ function play(policy: Policy, sheep = 6000): GameState {
   let target: string | null = null;
   let stall = 0;
   while (!s.over && s.hour < totalHours()) {
-    const c = s.columns.filter(isArmy).sort((a, b) => b.men - a.men)[0] ?? s.columns[0];
-    const ci = s.columns.indexOf(c);
+    // the main column is the one the campaign began with; the reinforcements join it,
+    // and the watches the noyan leaves behind stay in the towns they guard
+    const c = s.columns[0], ci = 0;
+    for (const [i, x] of s.columns.entries()) {
+      if (i === 0 || x.name.includes("detachment")) continue;
+      if (x.at && c.at && x.at !== c.at) orderMarch(s, i, c.at);
+    }
+    // a careful noyan leaves a watch in the towns it takes: the Jin call on them
+    if (policy === "careful" && c.at && s.cities[c.at]?.taken) {
+      const here = s.columns.filter(x => x.at === c.at);
+      const watch = here.some(x => x.name.includes("detachment"));
+      const total = here.reduce((n, x) => n + x.men, 0);
+      if (!watch && total >= 2500) {
+        const strongest = here.sort((a, b) => b.men - a.men)[0];
+        orderSplit(s, s.columns.indexOf(strongest), 1000);
+      }
+    }
     if (c.men > 0) {
       const obj = objectiveOf(s);
       const hungry = foodDays(c) < 30 && c.at && !c.foraging && !forageBlock(s, c, "requisition");
@@ -54,11 +69,11 @@ function play(policy: Policy, sheep = 6000): GameState {
       answer(s, policy);
       // a Jin army standing with the column is attacked when the odds are good
       if (policy === "careful") {
-        const c2 = s.columns.filter(isArmy).sort((a, b) => b.men - a.men)[0];
+        const c2 = s.columns[0];
         if (c2) {
-          const foe = canAttack(s, s.columns.indexOf(c2));
+          const foe = canAttack(s, 0);
           if (foe && ["rout", "victory"].includes(battleOdds(battleInput(s, c2, foe)).even.outcome)) {
-            orderAttack(s, s.columns.indexOf(c2));
+            orderAttack(s, 0);
           }
         }
       }
@@ -74,7 +89,7 @@ function answer(s: GameState, policy: Policy) {
   const c = s.columns[t.column], a = s.jin[t.army];
   if (t.kind === "call") {
     // the Jin call on a town: hold the walls if the odds are good, give the town up if not
-    const odds = battleOdds(battleInput(s, c, a, 0, 2)).even.outcome;
+    const odds = battleOdds(battleInput(s, c, a, 0, wallsOf(s, t.site))).even.outcome;
     if (policy === "direct" || ["defeat", "disaster"].includes(odds)) orderSurrender(s);
     else orderFight(s);
     return;
@@ -85,16 +100,24 @@ function answer(s: GameState, policy: Policy) {
 }
 
 describe("a whole campaign", () => {
-  it("the careful noyan wins the war in Shanxi, with the towns still in his hands", () => {
+  it("the careful noyan wins the war in Shanxi", () => {
     const s = play("careful");
     expect(s.over).toBe(true);
     expect(s.result).toBe("victory");
     expect(s.dispatchesMet).toBe(3);
     expect(s.dispatchesMissed).toBe(0);
     expect(s.favour).toBeGreaterThanOrEqual(90);
-    // the towns taken are still Mongol hands at the end
-    expect(Object.values(s.cities).filter(c => c.taken).length).toBeGreaterThanOrEqual(2);
+    // the town he ends the campaign with is still in his hands
+    expect(Object.values(s.cities).filter(c => c.taken).length).toBeGreaterThanOrEqual(1);
     expect(s.log.some(l => l.text.startsWith("Victory"))).toBe(true);
+  });
+
+  it("a watch of a thousand men cannot hold a walled city: the ground won is the ground kept", () => {
+    // the careful noyan leaves a watch of a thousand men in Taiyuan, and the Jin take it back
+    const s = play("careful");
+    const watch = s.columns.find(x => x.name.includes("detachment"));
+    expect(watch).toBeDefined();
+    expect(s.cities.taiyuan.taken).toBe(false);
   });
 
   it("the noyan who only marches and fights loses the campaign to the thaw", () => {

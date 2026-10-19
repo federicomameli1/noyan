@@ -111,7 +111,7 @@ describe("joining columns", () => {
     const s = columnOf(3000);
     orderSplit(s, 0, 1000);
     // the threat is upon the second column: after the join it is upon the first
-    s.threat = { kind: "attack", column: 1, army: 0, hour: 0 };
+    s.threat = { kind: "attack", column: 1, army: 0, site: "datong", hour: 0 };
     orderMerge(s, 0, 1);
     expect(s.threat?.column).toBe(0);
   });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { AIMS, DISPATCHES, aimMet, currentAim, currentDispatch, dispatchTime, favourText } from "./goals";
+import * as R from "./constants";
+import { formatDate } from "./calendar";
+import { AIMS, DISPATCHES, aimMet, currentAim, currentDispatch, deadlineHour, dispatchTime, favourText } from "./goals";
 import { fight, newGame, orderSiege, step, type GameState } from "./game";
 import { SCENARIO } from "./scenario";
 
@@ -113,6 +115,21 @@ describe("the khan's orders", () => {
     expect(s.log.some(l => l.text.includes("called back"))).toBe(true);
   });
 
+  it("an order is judged at the end of the day it is due, not at midnight", () => {
+    const s = newGame();
+    const due = DISPATCHES[0].deadline;
+    // the last hour of the day the order is due: still time
+    s.hour = deadlineHour(DISPATCHES[0]) - 1;
+    step(s);
+    expect(s.dispatchesMissed).toBe(0);
+    // the first hour of the next day: the order is lost
+    s.hour = deadlineHour(DISPATCHES[0]);
+    step(s);
+    expect(s.dispatchesMissed).toBe(1);
+    expect(s.dispatchResults[0]).toBe("missed");
+    expect(formatDate(due)).toBe("31 December 1218");
+  });
+
   it("says how many days are left for the order", () => {
     const s = newGame();
     const t = dispatchTime(s);
@@ -125,9 +142,11 @@ describe("the khan's orders", () => {
     expect(favourText(s)).toContain("anger");
   });
 
-  it("the three orders are due one after the other, the last at the thaw", () => {
+  it("the three orders are due one after the other, the last before the thaw", () => {
     expect(DISPATCHES.map(d => d.aim)).toEqual(["capital", "army", "south"]);
     const last = DISPATCHES[DISPATCHES.length - 1];
-    expect(last.deadline).toEqual(SCENARIO.end);
+    expect(last.deadline).toEqual(R.DEADLINE_SOUTH);
+    // the last order is due before the thaw, so it can be missed
+    expect(last.deadline).not.toEqual(SCENARIO.end);
   });
 });

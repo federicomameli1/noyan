@@ -160,6 +160,8 @@ export interface GameState {  /** hours since the start of the scenario */
   /** the orders of the khan fulfilled, and the ones missed */
   dispatchesMet: number;
   dispatchesMissed: number;
+  /** what became of each order of the khan, in the order they came */
+  dispatchResults: ("met" | "missed")[];
   /** state of the battle dice: each battle draws its luck from it */
   rng: number;
   /** the last battle fought, for the report */
@@ -198,6 +200,8 @@ export interface Threat {
   kind: "attack" | "relief" | "call";
   column: number;
   army: number;
+  /** the place where the army was when it raised the threat: it may have moved since */
+  site: string;
   hour: number;
 }
 
@@ -245,7 +249,7 @@ export function newGame(sheep = 0): GameState {
   }
   const first = DISPATCHES[0];
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, winsAtDispatch: 0, dispatchesMet: 0, dispatchesMissed: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, winsAtDispatch: 0, dispatchesMet: 0, dispatchesMissed: 0, dispatchResults: [], rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [
       { hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Spies say the Jin are gathering an army at Pingyang, in the south.` },
       { hour: 0, text: `A letter from the khan. ${first.title}: ${first.letter} The order must be done by ${formatDate(first.deadline)}.` },
@@ -612,9 +616,9 @@ export function orderAttack(s: GameState, ci: number): boolean {
 }
 
 /** Fights the battle between a column and the Jin army where that army stands, and applies what follows. */
-export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0, walls = 1) {
+export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0, walls = 1, at?: string) {
   const c = s.columns[ci];
-  const site = graph.site(a.at!);
+  const site = graph.site(at ?? a.at!);
   const b = joinBattle(s, c, battleInput(s, c, a, helpers, walls), site, attacker, a.name);
   // the garrison's men fall in proportion to their share of the foot
   const footAll = a.foot + helpers;
@@ -732,15 +736,20 @@ export function orderFight(s: GameState): boolean {
   if (!t) return false;
   s.threat = null;
   const c = s.columns[t.column], a = s.jin[t.army];
-  if (c.men <= 0 || armyMen(a) <= 0 || a.at !== c.at) return false;
+  if (c.men <= 0 || armyMen(a) <= 0 || !c.at || c.at !== t.site) return false;
   if (t.kind === "call") {
     // the column holds the walls of the town: the walls are worth the strength they give
-    fight(s, t.column, a, "jin", 0, wallsOf(s, a.at!));
+    if (!isArmy(c)) {
+      // a column too broken to hold the walls gives them up
+      retakeCity(s, t.site, a, true);
+      return true;
+    }
+    fight(s, t.column, a, "jin", 0, wallsOf(s, t.site), t.site);
     const outcome = s.lastBattle?.result.outcome;
-    if (outcome === "defeat" || outcome === "disaster") retakeCity(s, a.at!, a);
+    if (outcome === "defeat" || outcome === "disaster") retakeCity(s, t.site, a);
     return true;
   }
-  fight(s, t.column, a, "jin", reliefHelpers(s, t));
+  fight(s, t.column, a, "jin", reliefHelpers(s, t), 1, t.site);
   // a relief army that holds the field goes into the city it came for
   if (t.kind === "relief" && a.at && a.order === "hold") enterCity(s, a, a.at);
   return true;
@@ -752,8 +761,7 @@ export function orderSurrender(s: GameState): boolean {
   if (!t || t.kind !== "call") return false;
   s.threat = null;
   const a = s.jin[t.army];
-  if (!a.at) return false;
-  retakeCity(s, a.at, a, true);
+  retakeCity(s, t.site, a, true);
   return true;
 }
 
@@ -802,8 +810,8 @@ export function retakeCity(s: GameState, id: string, a: JinArmy, surrendered = f
   city.progress = 0;
   city.booty = 0;
   city.sacked = false;
-  // the half of the army that stays holds the town
-  city.garrison = Math.round(armyMen(a) / 2);
+  // the part of the army that stays holds the town
+  city.garrison = Math.round(armyMen(a) * R.GARRISON_SHARE);
   city.stores = city.storesAtStart;
   // the remounts waiting there are taken with the town
   const remounts = s.sites[id].remounts;
@@ -812,10 +820,19 @@ export function retakeCity(s: GameState, id: string, a: JinArmy, surrendered = f
   const how = surrendered ? "is given up to the Jin" : "is taken back by the Jin";
   log(s, `${site.name} ${how}: the town is theirs again${goods > 0 ? `, and ${fmt(goods)} goods with it` : ""}${remounts > 0 ? `, and ${fmt(remounts)} remounts with it` : ""}. `
     + `The khan is angry.`, "alert");
+  // a khan whose patience is over calls the noyan back
+  if (s.favour < 0 && !s.over) {
+    s.result = "defeat";
+    s.over = true;
+    log(s, "Defeat: the khan's patience is over, and the noyan is called back to the steppe.", "alert");
+  }
 }
 
 /** The walls a column defends behind, in the town where it stands. */
-export const wallsOf = (s: GameState, id: string) => R.CITY_TYPES[s.cities[id]?.type ?? "town"].walls;
+export const wallsOf = (s: GameState, id: string) => {
+  const city = s.cities[id];
+  return city ? city.walls : R.CITY_TYPES.town.walls;
+};
 
 function checkEnd(s: GameState) {
   if (s.over) return;

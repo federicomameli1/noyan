@@ -125,33 +125,33 @@ export const AIMS: readonly Aim[] = [
   },
 ];
 
-/** The letters of the khan, in the order they come. The last one is due at the thaw. */
+/** The letters of the khan, in the order they come. The last one is due before the thaw. */
 export const DISPATCHES: readonly Dispatch[] = [
   {
     aim: "capital",
-    deadline: { year: 1218, month: 11, day: 31, hour: 0 },
+    deadline: R.DEADLINE_CAPITAL,
     title: "The first letter",
     letter: `Muqali, the city in the north is yours to take: ${cityName(SCENARIO.objective)}, where the Jin keep their northern court. `
       + "Take it before the winter is out and the campaign in Shanxi is won. Feed the horses on the way: the roads are long and the grass is thin.",
   },
   {
     aim: "army",
-    deadline: { year: 1219, month: 1, day: 28, hour: 0 },
+    deadline: R.DEADLINE_ARMY,
     title: "The second letter",
     letter: "The Jin will come north now that their city is gone, and they will take back what you have won unless you break them. "
       + "Break a Jin army, Muqali, and the country behind you will stay quiet. The thaw is in March: you have until then.",
   },
   {
     aim: "south",
-    deadline: { year: 1219, month: 2, day: 31, hour: 0 },
+    deadline: R.DEADLINE_SOUTH,
     title: "The third letter",
     letter: `One Jin city stands between you and their southern court: ${cityName("fenzhou")}, in the mountains past Huozhou. `
       + "Take it, and the Jin in Shanxi will have nowhere left to gather. The grass will be poor before the thaw: take the city while you can.",
   },
 ];
 
-/** The hour by which an order must be fulfilled. */
-export const deadlineHour = (d: Dispatch) => daysBetween(SCENARIO.start, d.deadline) * 24;
+/** The hour by which an order must be fulfilled: the end of the day it is due. */
+export const deadlineHour = (d: Dispatch) => daysBetween(SCENARIO.start, d.deadline) * 24 + 24;
 
 /** The order the khan is waiting for, if there is one left. */
 export function currentDispatch(s: GameState): Dispatch | null {
@@ -206,8 +206,9 @@ export function checkDispatches(s: GameState) {
 
 /** The order is done: the khan is pleased, and the next letter comes. */
 function fulfil(s: GameState, aim: Aim) {
-  s.favour = Math.min(100, s.favour + R.FAVOUR_FULFILLED);
+  s.favour = Math.min(R.FAVOUR_MAX, s.favour + R.FAVOUR_FULFILLED);
   s.dispatchesMet += 1;
+  s.dispatchResults.push("met");
   log(s, `The khan's order is fulfilled: ${aim.name.toLowerCase()}. A rider brings the khan's thanks, and ${favourText(s)}.`, "arrival");
   s.dispatch += 1;
   if (!currentDispatch(s)) {
@@ -225,6 +226,7 @@ function miss(s: GameState) {
   const aim = AIMS.find(a => a.id === d.aim)!;
   s.favour -= R.FAVOUR_MISSED;
   s.dispatchesMissed += 1;
+  s.dispatchResults.push("missed");
   log(s, `The khan's order is not fulfilled in time: ${aim.name.toLowerCase()}. The khan is angry, and ${favourText(s)}.`, "alert");
   s.dispatch += 1;
   if (s.favour < 0) {

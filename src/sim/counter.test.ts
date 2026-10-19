@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HERDERS_RESERVE } from "./constants";
-import { newGame, orderFight, orderSurrender, retakeCity, step, type GameState } from "./game";
+import { newGame, orderFight, orderSurrender, retakeCity, step, wallsOf, type GameState } from "./game";
 
 const col = (s: GameState) => s.columns[0];
 const army = (s: GameState) => s.jin[0];
@@ -95,6 +95,34 @@ describe("a town taken back by the Jin", () => {
     expect(s.log.some(l => l.text.includes("Fenzhou is taken back"))).toBe(true);
   });
 
+  it("losing a town can end the campaign, when the khan has no patience left", () => {
+    const s = calledOn();
+    s.favour = 5;
+    days(s, 8);
+    expect(s.favour).toBeLessThan(0);
+    expect(s.over).toBe(true);
+    expect(s.result).toBe("defeat");
+    expect(s.log.some(l => l.text.includes("called back"))).toBe(true);
+  });
+
+  it("a call that is not answered does not break: the answer still reaches the town", () => {
+    const s = calledOn();
+    Object.assign(col(s), { at: "fenzhou", men: 5000, horses: 20000, rations: 1e9 });
+    // the army marches on before the player answers: the town it called on is still there
+    untilThreat(s);
+    expect(s.threat?.kind).toBe("call");
+    expect(s.threat?.site).toBe("fenzhou");
+    expect(() => orderFight(s)).not.toThrow();
+  });
+
+  it("the walls of a city are the walls of that city", () => {
+    const s = calledOn();
+    // Taiyuan is a walled city with walls of its own
+    s.cities.taiyuan.taken = true;
+    expect(wallsOf(s, "taiyuan")).toBe(s.cities.taiyuan.walls);
+    expect(wallsOf(s, "fenzhou")).toBe(s.cities.fenzhou.walls);
+  });
+
   it("the retake can be done directly, when the game needs it", () => {
     const s = calledOn();
     retakeCity(s, "fenzhou", army(s));
@@ -104,13 +132,19 @@ describe("a town taken back by the Jin", () => {
 });
 
 describe("the Jin raiders", () => {
-  it("take the sheep of the allied herders, and the remount herds are smaller", () => {
+  it("reach the pastures of the Mongols and take the herds of the herders", () => {
     const s = newGame();
-    s.sites.fengzhou.herders = HERDERS_RESERVE;
+    days(s, 30);
+    const raided = Object.values(s.sites).filter(st => st.herders < HERDERS_RESERVE);
+    expect(raided.length).toBeGreaterThan(0);
+    expect(s.log.some(l => l.text.includes("herders"))).toBe(true);
+  });
+
+  it("take a share of the reserve, so the herds are emptied in a few raids", () => {
+    const s = newGame();
     const raider = s.jin[1]; // the frontier horse
     Object.assign(raider, { at: "datong", leg: null, route: ["fengzhou"], order: "raid", target: "fengzhou", sight: 3 });
     days(s, 10);
-    expect(s.sites.fengzhou.herders).toBeLessThan(HERDERS_RESERVE);
-    expect(s.log.some(l => l.text.includes("herders"))).toBe(true);
+    expect(s.log.some(l => l.text.includes("625 of the herders' sheep"))).toBe(true);
   });
 });

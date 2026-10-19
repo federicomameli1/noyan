@@ -144,9 +144,37 @@ and the first runs showed what was wrong with the design as it was first written
   sieges and was still attacked. A column with fewer than a thousand men cannot
   besiege a city any more, and a column of a few dozen men is not worth attacking.
 
-With those fixed, the careful noyan wins the campaign on day 140 with two towns in
-his hands and a khan well satisfied, and the noyan who only marches and fights loses
-it at the thaw. Both results are in the tests.
+With those fixed, the careful noyan wins the campaign on day 126 with a town in his
+hands and a khan well satisfied, and the noyan who only marches and fights loses it
+at the thaw. Both results are in the tests.
+
+### What a second playtest found
+
+- **A call on a town could be lost.** Two Jin armies reaching two towns in the same
+  hour lost one of the calls: the first threat was waiting and the second was
+  dropped, and that town was never taken. A call is now a standing order, looked
+  at every hour: the army asks again until the player answers.
+- **A save made during a call could not be read.** The save validator knew about
+  the two kinds of threat of layer 1 and not the third, so the autosave of that
+  day was refused, the Continue button on the title screen disappeared, and an
+  exported file could not be imported.
+- **A town left without a garrison was in nobody's hands.** The Jin took a town
+  back only when they had been sent to call on it: a column that rode away before
+  the army arrived left the town with the Jin standing in it.
+- **The report of the campaign said the opposite of what happened.** The end of
+  the campaign said which orders had been fulfilled by counting them, and a
+  count is not a list: an order missed was reported as fulfilled. What became of
+  each order is now kept in the state, one entry per order.
+- **An order was judged a day early.** The orders were due on a day and were
+  lost at midnight of that day, while the top bar still said the day was due.
+- **The walls of a city were the walls of its kind.** Taiyuan has walls of its
+  own, and the defence was worth less than the city card said.
+- **The herds of the Mongols were out of reach.** The Jin horsemen heard of a
+  flock within sixty kilometres, and the pastures of the Mongols are three
+  hundred away: the raid on the remount herds never happened at all.
+- **A watch of a thousand men cannot hold a walled city.** The careful noyan
+  leaves a watch in the town he has taken, and the Jin take it back: the ground
+  won is the ground kept, and keeping it costs an army of its own.
 
 ## 6. What this needs in the code
 

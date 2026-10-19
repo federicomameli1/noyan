@@ -45,6 +45,18 @@ describe("saves", () => {
     expect(() => readSave({ ...good, game: { ...good.game, sites } })).toThrow("different map");
   });
 
+  it("keeps a save made while the Jin is calling on a town", () => {
+    const s = newGame();
+    s.cities.fenzhou.taken = true;
+    Object.assign(s.columns[0], { at: "fenzhou", men: 5000, horses: 20000, rations: 1e9 });
+    Object.assign(s.jin[0], { at: "fenzhou", leg: null, route: [], order: "call", target: "fenzhou", sight: 3 });
+    for (let i = 0; i < 12 * 24 && !s.threat; i++) step(s);
+    expect(s.threat?.kind).toBe("call");
+    const loaded = readSave(JSON.stringify(makeSave(s, 0))).game;
+    expect(loaded.threat?.kind).toBe("call");
+    expect(loaded.threat?.site).toBe("fenzhou");
+  });
+
   it("refuses a save whose armies, remounts or reserves do not fit the map", () => {
     const good = makeSave(newGame(), 0);
     // an army that relieves a city that is not on the map

@@ -210,7 +210,9 @@ export function stepJin(s: GameState, hourOfDay: number) {
       if (ci < 0) continue;
       // a column in a town the Mongols hold is attacked at its walls: hold them, or give the town up
       const town = mongolTown(s, a.at);
-      s.threat = { kind: town ? "call" : "attack", column: ci, army: ai, hour: s.hour };
+      a.order = "call";
+      a.target = a.at;
+      s.threat = { kind: town ? "call" : "attack", column: ci, army: ai, site: a.at, hour: s.hour };
       log(s, town
         ? `The ${a.name} calls on ${graph.site(a.at).name}: hold the walls, or give the town up.`
         : `The ${a.name} is upon ${s.columns[ci].name} at ${graph.site(a.at).name}. Stand and fight, or ride away.`, "alert");
@@ -227,6 +229,7 @@ export function stepJin(s: GameState, hourOfDay: number) {
     }
   }
   stepConvoys(s, marching);
+  checkCalls(s);
   updateSightings(s);
 }
 
@@ -328,20 +331,10 @@ function stepConvoys(s: GameState, marching: boolean) {
 
 /** An army reaches the end of its route. */
 function arrive(s: GameState, a: JinArmy, site: string) {
-  // a town the Mongols hold: the army calls on it, and takes it if nobody stands in it
+  // a town the Mongols hold: the army calls on it, and waits for the answer
   if (s.cities[site]?.taken) {
-    const ci = s.columns.findIndex(c => c.at === site && c.men > 0);
-    if (ci >= 0) {
-      // a column stands in the town: the walls are its own, if it holds them
-      if (!s.threat) {
-        a.order = "hold";
-        s.threat = { kind: "call", column: ci, army: s.jin.indexOf(a), hour: s.hour };
-        log(s, `The ${a.name} calls on ${graph.site(site).name}: hold the walls, or give the town up.`, "alert");
-      }
-      return;
-    }
-    // nobody stands in the town: the Jin take it back
-    retakeCity(s, site, a);
+    a.order = "call";
+    a.target = site;
     return;
   }
   if (a.order === "relieve" && site === a.target) {
@@ -351,7 +344,7 @@ function arrive(s: GameState, a: JinArmy, site: string) {
     const ci = s.columns.findIndex(c => c.siege === site && c.men > 0);
     if (ci >= 0 && !s.threat) {
       a.order = "hold";
-      s.threat = { kind: "relief", column: ci, army: s.jin.indexOf(a), hour: s.hour };
+      s.threat = { kind: "relief", column: ci, army: s.jin.indexOf(a), site, hour: s.hour };
       log(s, `The ${a.name} reaches ${graph.site(site).name}, and the garrison makes ready to sally. Fight them, or lift the siege.`, "alert");
       return;
     }
@@ -364,12 +357,34 @@ function arrive(s: GameState, a: JinArmy, site: string) {
         st.sheep = 0;
       }
       if (st.herders > 0) {
-        const taken = Math.round(st.herders * R.HERDER_RAID);
+        // the raid takes a share of the reserve, so the herds are emptied in a few raids
+        const taken = Math.min(st.herders, Math.round(R.HERDERS_RESERVE * R.HERDER_RAID_SHARE));
         st.herders -= taken;
         log(s, `Jin horsemen drive off ${fmt(taken)} of the herders' sheep at ${graph.site(site).name}: the remount herds are smaller.`, "alert");
       }
     }
     go(s, a, home(s, a), "return");
+  }
+}
+
+/**
+ * Once an hour: the Jin armies that have called on a town ask again, if the player has not
+ * answered yet. A town with nobody in it is taken; a town with a column in it is called on.
+ */
+function checkCalls(s: GameState) {
+  for (const [ai, a] of s.jin.entries()) {
+    if (a.order !== "call" || !a.at) continue;
+    const site = a.at;
+    if (!s.cities[site]?.taken) continue;
+    const ci = s.columns.findIndex(c => c.at === site && c.men > 0);
+    if (ci < 0) {
+      // nobody stands in the town: the Jin take it back
+      retakeCity(s, site, a);
+      continue;
+    }
+    if (s.threat) continue; // another army is asking: this one waits its turn
+    s.threat = { kind: "call", column: ci, army: ai, site, hour: s.hour };
+    log(s, `The ${a.name} calls on ${graph.site(site).name}: hold the walls, or give the town up.`, "alert");
   }
 }
 
@@ -416,7 +431,10 @@ function nearestColumnKm(s: GameState, lon: number, lat: number): number {
   return d;
 }
 
-/** Flocks left with no column to guard them, and the sheep of the allied herders, that Jin horsemen here would hear of. */
+/**
+ * Flocks left with no column to guard them, that Jin horsemen here would hear of, and the
+ * herds of the allied herders, which are further away but worth a long ride.
+ */
 function knownFlocks(s: GameState, a: JinArmy): string[] {
   const [lon, lat] = armyPosition(a);
   const towns = Object.entries(s.cities).filter(([, c]) => !c.taken).map(([id]) => graph.site(id));
@@ -424,7 +442,9 @@ function knownFlocks(s: GameState, a: JinArmy): string[] {
     if (st.sheep <= 0 && st.herders <= 0) return false;
     if (columnAt(s, id)) return false;
     const site = graph.site(id);
-    const near = (x: number, y: number) => distanceKm(site.lon, site.lat, x, y) <= R.JIN_FLOCK_SIGHT_KM;
+    // the herds of the Mongols are heard of from further away than a flock of sheep
+    const reach = st.herders > 0 ? R.HERDER_SIGHT_KM : R.JIN_FLOCK_SIGHT_KM;
+    const near = (x: number, y: number) => distanceKm(site.lon, site.lat, x, y) <= reach;
     return near(lon, lat) || towns.some(t => near(t.lon, t.lat));
   }).map(([id]) => id);
 }
@@ -466,7 +486,7 @@ export function wallsUnder(s: GameState, c: Column): number {
   if (!c.at) return 1;
   const city = s.cities[c.at];
   if (!city?.taken) return 1;
-  return R.CITY_TYPES[city.type].walls;
+  return city.walls;
 }
 
 /** How strong the army judges itself against a column, fighting where the column camps: above 1 it thinks it wins. */

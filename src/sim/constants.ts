@@ -4,6 +4,7 @@
 // Tags: [D] documented, [R] modern estimate, [S] game estimate, to be tuned by playing.
 
 import type { ConditionBand } from "./game";
+import type { GameDate } from "./calendar";
 import type { Control, Terrain } from "./world";
 
 /** Real seconds per game day at 1x speed. */
@@ -288,8 +289,10 @@ export const SLAUGHTER_SHARE = 0.5;
 export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
-/** share of the herders' sheep a raid takes [S] */
-export const HERDER_RAID = 0.5;
+/** share of the reserve a raid takes [S] */
+export const HERDER_RAID_SHARE = 0.25;
+/** how far the Jin horsemen hear of the herds of the Mongols, km [S] */
+export const HERDER_SIGHT_KM = 300;
 
 // --- columns (layer 1) ---
 /** men a detachment keeps, to be an army on its own [S] */
@@ -305,9 +308,19 @@ export const AIM_HORSES_PER_MAN = 2;
 /** cities the Mongols must still hold when the campaign is over [S] */
 export const AIM_HOLD = 2;
 
+// --- the khan's orders (layer 2) ---
+/** the day the first order, to take the city in the north, is due [S] */
+export const DEADLINE_CAPITAL: GameDate = { year: 1218, month: 11, day: 31, hour: 0 };
+/** the day the second order, to break a Jin army, is due [S] */
+export const DEADLINE_ARMY: GameDate = { year: 1219, month: 1, day: 28, hour: 0 };
+/** the day the last order, to take the city in the south, is due [S] */
+export const DEADLINE_SOUTH: GameDate = { year: 1219, month: 2, day: 15, hour: 0 };
+
 // --- the khan's favour (layer 2) ---
 /** the favour the khan starts with: a khan with a war in hand is not pleased [S] */
 export const FAVOUR_START = 70;
+/** the most favour the khan can have [S] */
+export const FAVOUR_MAX = 100;
 /** the favour an order fulfilled earns [S] */
 export const FAVOUR_FULFILLED = 10;
 /** the favour an order missed costs [S] */
@@ -320,6 +333,8 @@ export const FAVOUR_LOW = 20;
 export const FAVOUR_PARDON = 40;
 /** below this favour the khan is content enough [S] */
 export const FAVOUR_CONTENT = 60;
+/** the part of the army that stays in a town taken back [S] */
+export const GARRISON_SHARE = 0.5;
 
 // --- booty and remounts (layer 1) ---
 /** goods a fallen town holds for every man of its garrison [S] */

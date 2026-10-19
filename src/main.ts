@@ -622,7 +622,9 @@ function renderAims() {
     return `<li class="${met ? "met" : ""}"><b>${a.name}</b><span class="st">${a.status(game)}</span></li>`;
   }).join("");
   $("aims").innerHTML = order + honours;
-  $("aim-chip").innerHTML = aim ? `<b>${aim.name}</b> · ${aim.status(game)} · ${t.left} days` : "the khan is satisfied";
+  $("aim-chip").innerHTML = aim
+    ? `<b>${aim.name}</b> · ${aim.status(game)} · ${t.left} days`
+    : `the khan is ${game.dispatchesMissed > 0 ? "not satisfied" : "satisfied"}`;
   $("favour").textContent = `The khan's favour: ${game.favour} — ${favourText(game)}.`;
 }
 
@@ -755,11 +757,12 @@ function renderBattle() {
   const fresh = game.lastBattle && game.lastBattle !== reportedBattle ? game.lastBattle : null;
   if (t && t.kind === "call" && !game.over) {
     const c = game.columns[t.column], a = game.jin[t.army];
-    const site = graph.site(a.at!), walls = wallsOf(game, a.at!);
+    const site = graph.site(t.site), walls = wallsOf(game, t.site);
+    const canHold = isArmy(c);
     showBattle(`${c.name} at ${site.name}`, `The ${a.name} calls on ${site.name}`,
       `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} stand before the gates of ${site.name}. `
-        + `Behind the walls your men are worth ${times(walls)} what they are worth in the open.`,
-      `<button class="primary big" id="b-fight">Hold the walls</button>
+        + `Behind the walls your men are worth ${times(walls)} what they are worth in the open.</p>${oddsHTML(c, a, 0, walls)}`,
+      `<button class="primary big" id="b-fight" ${canHold ? "" : "disabled"}>${canHold ? "Hold the walls" : `Hold the walls (${fmt(c.men)} men is not an army)`}</button>
       <button class="big" id="b-surrender">Give the town up</button>`);
     $("b-fight").onclick = () => { orderFight(game); render(); };
     $("b-surrender").onclick = () => { orderSurrender(game); render(); };
@@ -767,7 +770,7 @@ function renderBattle() {
   }
   if (t && t.kind === "relief" && !game.over) {
     const c = game.columns[t.column], a = game.jin[t.army];
-    const city = game.cities[a.at!], name = graph.site(a.at!).name, helpers = reliefHelpers(game);
+    const city = game.cities[t.site], name = graph.site(t.site).name, helpers = reliefHelpers(game);
     showBattle(`${c.name} before ${name}`, `The ${a.name} has come to relieve ${name}`,
       `<p>${fmt(a.foot)} foot and ${fmt(a.horse)} horse stand before the siege lines, and ${fmt(helpers)} men of the garrison make ready to sally behind us.</p>${oddsHTML(c, a, helpers)}`,
       `<button class="primary big" id="b-fight">Fight them, with the garrison at our backs</button>
@@ -781,7 +784,7 @@ function renderBattle() {
     const block = refuseBlock(game);
     const to = block ? null : escapeSite(game, c, a);
     const costs = [c.siege ? "lifting the siege" : "", c.sheep > 0 ? "leaving the sheep behind" : ""].filter(Boolean).join(", ");
-    showBattle(`${c.name} at ${graph.site(a.at!).name}`, `The ${a.name} is upon us`,
+    showBattle(`${c.name} at ${graph.site(t.site).name}`, `The ${a.name} is upon us`,
       `<p>${[a.foot ? `${fmt(a.foot)} foot` : "", a.horse ? `${fmt(a.horse)} horse` : ""].filter(Boolean).join(" and ")} have caught up with ${c.name}.</p>${oddsHTML(c, a)}`,
       `<button class="primary big" id="b-fight">Stand and fight</button>
       ${to ? `<button class="big" id="b-refuse">Ride away to ${graph.site(to).name} at a forced march${costs ? `, ${costs}` : ""}</button>` : `<p class="note">Riding away is not possible: ${block}</p>`}`);
@@ -848,9 +851,8 @@ function showEnd() {
   }).join("");
   const orders = DISPATCHES.map((d, i) => {
     const a = AIMS.find(x => x.id === d.aim)!;
-    const done = i < game.dispatch;
-    const met = done && game.dispatchesMet > i;
-    return `<dt>${a.name}</dt><dd class="${!done ? "" : met ? "t-ok" : "t-bad"}">${!done ? "not reached" : met ? "fulfilled" : "missed"}</dd>`;
+    const result = game.dispatchResults[i];
+    return `<dt>${a.name}</dt><dd class="${!result ? "" : result === "met" ? "t-ok" : "t-bad"}">${!result ? "not reached" : result === "met" ? "fulfilled" : "missed"}</dd>`;
   }).join("");
   const win = game.result === "victory";
   $("end-title").textContent = win ? "The campaign is won" : "The campaign has failed";

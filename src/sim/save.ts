@@ -55,7 +55,8 @@ export function readSave(data: unknown): SaveFile {
   // the khan's orders, and the favour they are worth
   if (!isNumber(game.dispatch) || game.dispatch < 0 || game.dispatch > DISPATCHES.length
     || !isNumber(game.favour) || !isNumber(game.winsAtDispatch)
-    || !isNumber(game.dispatchesMet) || !isNumber(game.dispatchesMissed)) fail("The save is damaged.");
+    || !isNumber(game.dispatchesMet) || !isNumber(game.dispatchesMissed)
+    || !Array.isArray(game.dispatchResults) || !game.dispatchResults.every(r => r === "met" || r === "missed")) fail("The save is damaged.");
   for (const c of game.columns) {
     if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition) || !isNumber(c.morale)
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");
@@ -80,7 +81,9 @@ export function readSave(data: unknown): SaveFile {
 
   // saves made before a Jin army could catch a column
   game.threat ??= null;
-  if (game.threat && ((game.threat.kind !== "attack" && game.threat.kind !== "relief") || !isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
+  if (game.threat && (!["attack", "relief", "call"].includes(game.threat.kind) || !isNumber(game.threat.column)
+    || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army]
+    || typeof game.threat.site !== "string" || !SCENARIO.graph.sites.some(x => x.id === game.threat!.site))) fail("The save is damaged.");
   // saves made before an event could wait for an answer
   if (!Array.isArray(game.eventsDone) || !game.eventsDone.every(k => typeof k === "string")) fail("The save is damaged.");
   const ev: unknown = game.event;
