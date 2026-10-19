@@ -61,7 +61,7 @@ export function readSave(data: unknown): SaveFile {
   }
   if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders) || !isNumber(st.remounts))) fail("The save is damaged.");
   // a city knows the hour it fell and the goods it still holds
-  if (Object.values(game.cities).some(c => !isObject(c) || typeof c.taken !== "boolean" || !isNumber(c.booty) || (c.takenAt !== null && !isNumber(c.takenAt)))) fail("The save is damaged.");
+  if (Object.values(game.cities).some(c => !isObject(c) || typeof c.taken !== "boolean" || typeof c.sacked !== "boolean" || !isNumber(c.booty) || (c.takenAt !== null && !isNumber(c.takenAt)))) fail("The save is damaged.");
   // the remounts on the road
   if (game.remounts.some(r => !isObject(r) || typeof r.site !== "string" || !isNumber(r.horses) || !isNumber(r.hour))) fail("The save is damaged.");
   // every place of the map must be there, and nothing else: a save of an older map would break the routes

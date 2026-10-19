@@ -24,14 +24,17 @@ export function orderSack(s: GameState, ci: number): boolean {
   const c = s.columns[ci];
   if (!c.at) return false;
   const city = s.cities[c.at];
-  if (!city || !city.taken || city.booty <= 0) return false;
+  if (!city || !city.taken || city.sacked || city.booty <= 0) return false;
   const goods = city.booty;
-  city.booty = 0;
+  city.sacked = true;
   s.treasury += goods;
   anger(s, c.at, R.SACK_HOSTILITY);
   log(s, `${c.name} sacks ${graph.site(c.at).name}: ${fmt(goods)} goods for the treasury, and the country is left in mourning.`);
   return true;
 }
+
+/** The goods taken from the towns, over the whole campaign. */
+export const goodsTaken = (s: GameState) => Object.values(s.cities).reduce((n, c) => n + (c.sacked ? c.booty : 0), 0);
 
 /** The most horses the treasury can pay for, rounded down to whole tens. */
 export function remountsAffordable(s: GameState): number {

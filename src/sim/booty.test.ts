@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootyOf, mongolGround, orderRemounts, orderSack, remountsAffordable, stepBooty } from "./booty";
+import { bootyOf, goodsTaken, mongolGround, orderRemounts, orderSack, remountsAffordable, stepBooty } from "./booty";
 import { HORSE_PRICE, REMOUNT_DAYS, SACK_HOSTILITY } from "./constants";
 import { newGame, orderSiege, step, type GameState } from "./game";
 
@@ -25,7 +25,8 @@ describe("booty", () => {
     expect(s.treasury).toBe(0);
     expect(orderSack(s, 0)).toBe(true);
     expect(s.treasury).toBe(s.cities.daizhou.garrison * 2);
-    expect(s.cities.daizhou.booty).toBe(0);
+    expect(s.cities.daizhou.sacked).toBe(true);
+    expect(goodsTaken(s)).toBe(s.cities.daizhou.booty);
     // a town can be sacked only once
     expect(orderSack(s, 0)).toBe(false);
   });

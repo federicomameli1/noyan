@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   HERDERS_REGROW, HORSE_PRICE, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
-  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
+  battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
@@ -344,7 +344,7 @@ function renderPlace() {
       <dt>Walls</dt><dd>${city.walls >= 4 ? "Very strong" : city.walls >= 3 ? "Strong" : city.walls >= 2 ? "Fair" : "Weak"}</dd>
       <dt>Stores</dt><dd>${Math.ceil(city.stores)} days</dd>
       <dt>Spoils</dt><dd>${spoilsText(c, city)}</dd>` : ""}
-      ${city?.taken ? `<dt>Goods</dt><dd>${city.booty > 0 ? `${fmt(city.booty)} left to sack` : "already sacked"}</dd>` : ""}
+      ${city?.taken ? `<dt>Goods</dt><dd>${city.booty > 0 ? `${fmt(city.booty)} ${city.sacked ? "taken" : "to sack"}` : "nothing left"}</dd>` : ""}
       <dt>Grass</dt><dd>${grassText(pastureDensity(s, date.month, st))}${st.grazed > 1 ? ", partly grazed" : ""}</dd>
       <dt>Water</dt><dd>${s.water ? "Yes" : "None, a dry camp"}</dd>
       ${st.sheep > 0 ? `<dt>Flock</dt><dd>${fmt(st.sheep)} sheep left here</dd>` : ""}
@@ -356,7 +356,7 @@ function renderPlace() {
     ${started && !here && plan ? `<button class="primary" id="go">March here</button>` : ""}
     ${started && foe?.at === s.id ? `<button class="primary" id="attack">Attack the ${foe.name}</button>` : ""}
     ${started && here && canBesiege(game, c) ? `<button class="primary" id="siege">Lay siege</button>` : ""}
-    ${started && here && city?.taken && city.booty > 0 ? `<button class="primary" id="sack">Sack the town: ${fmt(city.booty)} goods</button>` : ""}
+    ${started && here && city?.taken && !city.sacked && city.booty > 0 ? `<button class="primary" id="sack">Sack the town: ${fmt(city.booty)} goods</button>` : ""}
     ${started && here ? forageButtons(c) : ""}
     ${started && here && c.siege === s.id && city && sallyThreat(game, c) ? `<p class="note t-bad" style="margin-top:8px">The siege is weak: ${fmt(sallyMen(game, c))} men of the garrison may sally against it at the end of the day.</p>` : ""}
     ${started && here && c.siege === s.id && city ? (stormFails(c, city) ? `<p class="note" style="margin-top:8px">Too few men to storm the walls yet: about ${fmt(stormCost(city))} would fall.</p>` : `<button class="primary" id="storm">Storm now, losing about ${fmt(stormCost(city))} men</button>`) : ""}`);
@@ -816,6 +816,7 @@ function showEnd() {
   const menAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men, 0);
   const horsesAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men * c.horsesPerMan, 0);
   const taken = Object.entries(game.cities).filter(([, x]) => x.taken).map(([id]) => graph.site(id).name);
+  const goods = goodsTaken(game);
   const aims = AIMS.map(a => {
     const met = aimMet(game, a, true);
     return `<dt>${a.name}</dt><dd class="${met ? "t-ok" : "t-warn"}">${met ? "met" : "not met"}</dd>`;
@@ -827,6 +828,7 @@ function showEnd() {
     <dt>Men</dt><dd>${fmt(men)} of ${fmt(menAtStart)}</dd>
     <dt>Horses</dt><dd>${fmt(horses)} of ${fmt(horsesAtStart)}</dd>
     <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd>
+    <dt>Goods taken</dt><dd>${fmt(goods)}</dd>
     ${aims}</dl>`);
   $("end").hidden = false;
 }

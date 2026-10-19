@@ -121,6 +121,8 @@ export interface CityState {
   takenAt: number | null;
   /** goods the town still holds, to be sacked */
   booty: number;
+  /** the town has been sacked: its goods are in the treasury */
+  sacked: boolean;
 }
 
 export interface LogEntry {
@@ -231,7 +233,7 @@ export function newGame(sheep = 0): GameState {
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, remounts: 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
-    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0 };
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0, sacked: false };
   }
   return {
     hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
