@@ -6,10 +6,16 @@ import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
+import { checkDispatches, currentAim, DISPATCHES } from "./goals";
+import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
+import { bootyOf, stepBooty } from "./booty";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
+
+export { log } from "./journal";
+export type { LogEntry } from "./journal";
 
 export interface Leg {
   from: string;
@@ -91,6 +97,8 @@ export interface SiteState {
   sheep: number;
   /** sheep the allied herders here can still give */
   herders: number;
+  /** remounts waiting here for a column to take them */
+  remounts: number;
   /** what the villages around still hold: rations, horse-days of grain, head of livestock */
   food: number;
   grain: number;
@@ -113,30 +121,47 @@ export interface CityState {
   /** 0-100: at 100 the city falls */
   progress: number;
   taken: boolean;
+  /** the hour the city fell, or null while it stands */
+  takenAt: number | null;
+  /** goods the town still holds, to be sacked */
+  booty: number;
+  /** the town has been sacked: its goods are in the treasury */
+  sacked: boolean;
 }
 
-export interface LogEntry {
-  hour: number;
-  text: string;
-  /** entries the player should not miss: arrivals and alerts pause the game, warnings do not */
-  kind?: "arrival" | "alert" | "warning";
-}
-
-export interface GameState {
-  /** hours since the start of the scenario */
+export interface GameState {  /** hours since the start of the scenario */
   hour: number;
   columns: Column[];
   /** Jin armies in the field */
   jin: JinArmy[];
   /** Jin wagon convoys feeding the field armies */
   convoys: Convoy[];
+  /** the Jin armies the dynasty has sent as reserves so far */
+  jinArrived: number;
   /** days since convoys were last sent out */
   convoyDay: number;
+  /** goods the army holds: they buy remounts */
+  treasury: number;
+  /** remounts on the road, from the khan's herds */
+  remounts: RemountOrder[];
   sites: Record<string, SiteState>;
   cities: Record<string, CityState>;
   log: LogEntry[];
   /** reinforcements from the scenario already arrived */
   arrived: number;
+  /** battles won outright: a Jin army broken in the open */
+  wins: number;
+  /** the order of the khan the campaign is on: the index of the letter in the list */
+  dispatch: number;
+  /** the khan's favour, 0 to 100 */
+  favour: number;
+  /** the Jin armies broken when the current order was given: they do not count for it */
+  winsAtDispatch: number;
+  /** the orders of the khan fulfilled, and the ones missed */
+  dispatchesMet: number;
+  dispatchesMissed: number;
+  /** what became of each order of the khan, in the order they came */
+  dispatchResults: ("met" | "missed")[];
   /** state of the battle dice: each battle draws its luck from it */
   rng: number;
   /** the last battle fought, for the report */
@@ -159,12 +184,24 @@ export interface PendingEvent {
   hour: number;
 }
 
+/** Remounts called from the khan's herds: they reach the place after `hour`. */
+export interface RemountOrder {
+  site: string;
+  horses: number;
+  hour: number;
+}
+
 /** A Jin army upon a column, waiting for the player's answer. Indexes into `columns` and `jin`. */
 export interface Threat {
-  /** attack: the army caught up with the column · relief: the army reached the city the column besieges */
-  kind: "attack" | "relief";
+  /**
+   * attack: the army caught up with the column · relief: the army reached the city the column
+   * besieges · call: the army calls on a town the Mongols hold
+   */
+  kind: "attack" | "relief" | "call";
   column: number;
   army: number;
+  /** the place where the army was when it raised the threat: it may have moved since */
+  site: string;
   hour: number;
 }
 
@@ -205,14 +242,18 @@ export function newGame(sheep = 0): GameState {
   const c = SCENARIO.column;
   const col = newColumn(c, SCENARIO.base, sheep);
   const sites: Record<string, SiteState> = {};
-  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, ...newCountry(s) };
+  for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, remounts: 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
-    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null, booty: 0, sacked: false };
   }
+  const first = DISPATCHES[0];
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
-    log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, jinArrived: 0, treasury: 0, remounts: [], sites, cities, arrived: 0, wins: 0, dispatch: 0, favour: R.FAVOUR_START, winsAtDispatch: 0, dispatchesMet: 0, dispatchesMissed: 0, dispatchResults: [], rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    log: [
+      { hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Spies say the Jin are gathering an army at Pingyang, in the south.` },
+      { hour: 0, text: `A letter from the khan. ${first.title}: ${first.letter} The order must be done by ${formatDate(first.deadline)}.` },
+    ],
   };
 }
 
@@ -242,6 +283,9 @@ export function speedFactor(c: Column): number {
 export function isMoving(c: Column): boolean {
   return !c.halted && (c.leg !== null || c.route.length > 0) && c.men > 0;
 }
+
+/** True if the column is still an army: with fewer men than that it cannot campaign. */
+export const isArmy = (c: Column) => c.men >= R.DEFEAT_MEN;
 
 /** The site whose pasture the column uses: where it stands, or the nearer end of its leg. */
 export function campSite(c: Column): Site {
@@ -432,7 +476,7 @@ export function siegeDays(s: GameState, c: Column, id: string): number {
 export const stormCost = (city: CityState) => Math.round(city.garrison * city.walls * (1 - city.progress / 100) * R.STORM_COST);
 
 /** Can this column besiege the city where it stands? */
-export const canBesiege = (s: GameState, c: Column) => !!c.at && !!s.cities[c.at] && !s.cities[c.at].taken && c.siege !== c.at;
+export const canBesiege = (s: GameState, c: Column) => !!c.at && !!s.cities[c.at] && !s.cities[c.at].taken && c.siege !== c.at && isArmy(c);
 
 export function orderSiege(s: GameState, ci: number): boolean {
   const c = s.columns[ci];
@@ -477,6 +521,7 @@ export function spoils(c: Column, city: CityState, stormed: boolean) {
     engineers: rules.engineers && !c.engineers,
     recruits: stormed ? 0 : Math.round(city.garrison * rules.recruits),
     opensPass: rules.blocks,
+    booty: bootyOf(city.garrison),
   };
 }
 
@@ -484,7 +529,9 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   const city = s.cities[id];
   const got = spoils(c, city, stormed);
   city.taken = true;
+  city.takenAt = s.hour;
   city.stores = 0;
+  city.booty = got.booty;
   cityFalls(s, id);
   for (const o of s.columns) if (o.siege === id) o.siege = null;
   c.rations += got.rations;
@@ -494,13 +541,9 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   if (got.grain >= 1) gains.push(`${Math.round(got.grain)} days of grain for the horses`);
   if (got.engineers) { c.engineers = true; gains.push("engineers for the next sieges"); }
   if (got.recruits) gains.push(`${got.recruits.toLocaleString("en")} men from the garrison, on foot`);
+  if (got.booty > 0) gains.push(`${got.booty.toLocaleString("en")} goods to sack`);
   const opened = got.opensPass ? " The road through the pass is open." : "";
   log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.${opened}`, "arrival");
-  if (id === SCENARIO.objective) {
-    s.result = "victory";
-    s.over = true;
-    log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}.`, "arrival");
-  }
 }
 
 // --- battles ---
@@ -535,9 +578,13 @@ export function canAttack(s: GameState, ci: number): JinArmy | null {
 }
 
 /** The battle between a column and a Jin army, fought where the army stands, before luck. */
-export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0): BattleInput {
+export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0, walls = 1): BattleInput {
   const jin = armyForce(s, a);
-  return { mongol: columnForce(c), jin: { ...jin, foot: jin.foot + helpers }, ground: battleGround(graph.site(a.at ?? campSite(c).id)) };
+  return {
+    mongol: { ...columnForce(c), walls },
+    jin: { ...jin, foot: jin.foot + helpers },
+    ground: battleGround(graph.site(a.at ?? campSite(c).id)),
+  };
 }
 
 /** A garrison fighting outside its walls: all foot. */
@@ -569,10 +616,10 @@ export function orderAttack(s: GameState, ci: number): boolean {
 }
 
 /** Fights the battle between a column and the Jin army where that army stands, and applies what follows. */
-export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0) {
+export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" | "jin", helpers = 0, walls = 1, at?: string) {
   const c = s.columns[ci];
-  const site = graph.site(a.at!);
-  const b = joinBattle(s, c, battleInput(s, c, a, helpers), site, attacker, a.name);
+  const site = graph.site(at ?? a.at!);
+  const b = joinBattle(s, c, battleInput(s, c, a, helpers, walls), site, attacker, a.name);
   // the garrison's men fall in proportion to their share of the foot
   const footAll = a.foot + helpers;
   const garrisonLost = footAll > 0 ? Math.round(b.footLost * helpers / footAll) : 0;
@@ -581,6 +628,8 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   const city = s.cities[site.id];
   if (garrisonLost && city) city.garrison = Math.max(0, city.garrison - garrisonLost);
   a.morale = clamp(a.morale + b.r.morale.jin, 0, 100);
+  // a Jin army beaten in the field, at the walls or in the open: the war aims count it
+  if (b.r.outcome === "rout" || b.r.outcome === "victory") s.wins += 1;
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
   const jinDone = b.r.outcome === "draw" || b.r.outcome === "victory" || b.r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
@@ -592,7 +641,7 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
     + `the Jin lose ${fmt(b.footLost + b.horseLost)} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
   checkEnd(s);
   // a beaten enemy leaves horses loose on the field: the column can round them up
-  if ((b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);
+  if (!s.over && (b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);
 }
 
 /**
@@ -687,10 +736,32 @@ export function orderFight(s: GameState): boolean {
   if (!t) return false;
   s.threat = null;
   const c = s.columns[t.column], a = s.jin[t.army];
-  if (c.men <= 0 || armyMen(a) <= 0 || a.at !== c.at) return false;
-  fight(s, t.column, a, "jin", reliefHelpers(s, t));
+  if (c.men <= 0 || armyMen(a) <= 0 || !c.at || c.at !== t.site) return false;
+  if (t.kind === "call") {
+    // the column holds the walls of the town: the walls are worth the strength they give
+    if (!isArmy(c)) {
+      // a column too broken to hold the walls gives them up
+      retakeCity(s, t.site, a, true);
+      return true;
+    }
+    fight(s, t.column, a, "jin", 0, wallsOf(s, t.site), t.site);
+    const outcome = s.lastBattle?.result.outcome;
+    if (outcome === "defeat" || outcome === "disaster") retakeCity(s, t.site, a);
+    return true;
+  }
+  fight(s, t.column, a, "jin", reliefHelpers(s, t), 1, t.site);
   // a relief army that holds the field goes into the city it came for
   if (t.kind === "relief" && a.at && a.order === "hold") enterCity(s, a, a.at);
+  return true;
+}
+
+/** Gives the town up to the Jin army that calls on it. */
+export function orderSurrender(s: GameState): boolean {
+  const t = s.threat;
+  if (!t || t.kind !== "call") return false;
+  s.threat = null;
+  const a = s.jin[t.army];
+  retakeCity(s, t.site, a, true);
   return true;
 }
 
@@ -728,6 +799,41 @@ export function orderRefuse(s: GameState): boolean {
   return true;
 }
 
+/** A Jin army that calls on a town the Mongols hold, and the town is taken back. */
+export function retakeCity(s: GameState, id: string, a: JinArmy, surrendered = false) {
+  const city = s.cities[id];
+  if (!city) return;
+  const site = graph.site(id);
+  const goods = city.booty;
+  city.taken = false;
+  city.takenAt = null;
+  city.progress = 0;
+  city.booty = 0;
+  city.sacked = false;
+  // the part of the army that stays holds the town
+  city.garrison = Math.round(armyMen(a) * R.GARRISON_SHARE);
+  city.stores = city.storesAtStart;
+  // the remounts waiting there are taken with the town
+  const remounts = s.sites[id].remounts;
+  s.sites[id].remounts = 0;
+  s.favour -= R.FAVOUR_TOWN_LOST;
+  const how = surrendered ? "is given up to the Jin" : "is taken back by the Jin";
+  log(s, `${site.name} ${how}: the town is theirs again${goods > 0 ? `, and ${fmt(goods)} goods with it` : ""}${remounts > 0 ? `, and ${fmt(remounts)} remounts with it` : ""}. `
+    + `The khan is angry.`, "alert");
+  // a khan whose patience is over calls the noyan back
+  if (s.favour < 0 && !s.over) {
+    s.result = "defeat";
+    s.over = true;
+    log(s, "Defeat: the khan's patience is over, and the noyan is called back to the steppe.", "alert");
+  }
+}
+
+/** The walls a column defends behind, in the town where it stands. */
+export const wallsOf = (s: GameState, id: string) => {
+  const city = s.cities[id];
+  return city ? city.walls : R.CITY_TYPES.town.walls;
+};
+
 function checkEnd(s: GameState) {
   if (s.over) return;
   const men = s.columns.reduce((n, c) => n + c.men, 0);
@@ -738,7 +844,8 @@ function checkEnd(s: GameState) {
   } else if (s.hour >= totalHours()) {
     s.result = "defeat";
     s.over = true;
-    log(s, `Defeat: spring has come and ${graph.site(SCENARIO.objective).name} still stands.`, "alert");
+    const aim = currentAim(s);
+    log(s, `Defeat: the thaw has come, and ${aim ? aim.name.toLowerCase() : "the last order"} is not done.`, "alert");
   }
 }
 
@@ -787,10 +894,6 @@ export function takeFromHerders(s: GameState, ci: number, n: number): boolean {
 
 // --- simulation ---
 
-export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
-  s.log.push(kind ? { hour: s.hour, text, kind } : { hour: s.hour, text });
-}
-
 /** Advances the game by one hour. */
 export function step(s: GameState) {
   if (s.over) return;
@@ -799,7 +902,9 @@ export function step(s: GameState) {
   const hourOfDay = dateOf(s).hour;
   for (const c of s.columns) { stepForage(s, c); stepColumn(s, c, hourOfDay); }
   stepJin(s, hourOfDay);
+  stepBooty(s);
   checkEvents(s);
+  checkDispatches(s);
   s.hour++;
   if (dateOf(s).hour === 0) endOfDay(s);
   const next = SCENARIO.reinforcements[s.arrived];

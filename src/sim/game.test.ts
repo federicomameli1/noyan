@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { blockadeMen, dropFlock, effectivePace, forecast, leaveBlockade, newGame, orderHalt, orderMarch, orderSiege, orderStorm, planRoute, setPace, siegeDays, sortieCost, step, stormCost, takeFlock, takeFromHerders, type GameState } from "./game";
 import { HERDERS_RESERVE, RATIONS_PER_SHEEP, type PaceId } from "./constants";
+import { SCENARIO } from "./scenario";
 
 const days = (s: GameState, n: number) => { for (let i = 0; i < n * 24; i++) step(s); };
 const col = (s: GameState) => s.columns[0];
@@ -213,9 +214,10 @@ describe("sieges", () => {
     expect(col(s).engineers).toBe(true);
   });
 
-  it("storming costs men, less when the siege is advanced, and wins at Taiyuan", () => {
+  it("storming costs men, less when the siege is advanced, and takes Taiyuan", () => {
     const s = at("taiyuan");
     s.jin = []; // no relief army: this is about the storm alone
+    s.jinArrived = SCENARIO.jinReserves.length; // and no reserves come
     orderSiege(s, 0);
     const fresh = stormCost(s.cities.taiyuan);
     days(s, 50); // about two thirds of the way
@@ -223,14 +225,17 @@ describe("sieges", () => {
     expect(later).toBeLessThan(fresh);
     orderStorm(s, 0);
     expect(col(s).men).toBe(3000 - later);
-    expect(s.result).toBe("victory");
-    expect(s.over).toBe(true);
+    // the city falls: the khan's first order is fulfilled, and the campaign goes on
+    expect(s.cities.taiyuan.taken).toBe(true);
+    step(s);
+    expect(s.dispatchesMet).toBe(1);
+    expect(s.over).toBe(false);
   });
 
   it("a long winter siege at Taiyuan starves the horses", () => {
     const s = fed("normal", 90, "taiyuan"); // from 30 November
     orderSiege(s, 0);
-    days(s, 35);
+    days(s, 45);
     expect(s.cities.taiyuan.taken).toBe(false);
     expect(col(s).condition).toBeLessThan(40);
   });
@@ -460,7 +465,7 @@ describe("end of the game", () => {
     col(s).men = 4500;
     orderSiege(s, 0);
     orderStorm(s, 0); // about 3,300 men lost
-    expect(s.result).toBe("victory"); // the city falls before the count
+    expect(s.cities.taiyuan.taken).toBe(true); // the city falls before the count
     const t = fed("normal", 0, "fenzhou");
     col(t).men = 1300;
     orderSiege(t, 0);

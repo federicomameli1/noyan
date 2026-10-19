@@ -4,6 +4,7 @@
 // Tags: [D] documented, [R] modern estimate, [S] game estimate, to be tuned by playing.
 
 import type { ConditionBand } from "./game";
+import type { GameDate } from "./calendar";
 import type { Control, Terrain } from "./world";
 
 /** Real seconds per game day at 1x speed. */
@@ -99,7 +100,7 @@ export const ENGINEER_FACTOR = 2;
 /** men lost storming a city: garrison x walls x (1 - progress/100) x STORM_COST [S] */
 export const STORM_COST = 0.11;
 /** most days of rations a column can carry away from a taken city [S] */
-export const MAX_RATION_DAYS = 30;
+export const MAX_RATION_DAYS = 45;
 /** with fewer men the column can no longer campaign: the game is lost [S] */
 export const DEFEAT_MEN = 1000;
 
@@ -161,8 +162,8 @@ export const JIN_FOOD_DAYS = 20;
 export const CONVOY_EVERY = 5;
 /** days of food a convoy brings [S] */
 export const CONVOY_FOOD = 10;
-/** km a day a wagon convoy makes, during the Jin marching hours [S] */
-export const CONVOY_KM_PER_DAY = 15;
+/** km a day a wagon convoy makes, during the Jin marching hours: enough to keep up with an army [S] */
+export const CONVOY_KM_PER_DAY = 24;
 /** share of a captured convoy's food the Mongols can use as rations [S] */
 export const CONVOY_RATIONS_SHARE = 0.5;
 /** days of grain for the horses found in a captured convoy [S] */
@@ -235,6 +236,8 @@ export const MORALE_ROUT = -35;
 export const BATTLE_SEED = 1218;
 /** a Jin army attacks when it judges itself at least this strong against a column [S] */
 export const JIN_ATTACK_RATIO = 1.3;
+/** fewest men a column may have and still be worth attacking [S] */
+export const RAID_MIN_MEN = 100;
 /** a Jin army whose morale falls below this has had enough: it goes home [S] */
 export const JIN_RETREAT_MORALE = 30;
 /** a column can ride away from a Jin army only on horses in better condition than this [S] */
@@ -277,7 +280,7 @@ export const HOSTILITY_COOLING = 1;
 export const HIDE_HOSTILITY = 50;
 /** above this they steal horses at night: share of the herd [S] */
 export const THEFT_HOSTILITY = 70;
-export const HORSE_THEFT = 0.002;
+export const HORSE_THEFT = 0.001;
 /** share of the meat that can be eaten when a whole flock is slaughtered at once [S] */
 export const SLAUGHTER_SHARE = 0.5;
 
@@ -286,6 +289,64 @@ export const SLAUGHTER_SHARE = 0.5;
 export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
+/** share of the reserve a raid takes [S] */
+export const HERDER_RAID_SHARE = 0.25;
+/** how far the Jin horsemen hear of the herds of the Mongols, km [S] */
+export const HERDER_SIGHT_KM = 300;
+
+// --- columns (layer 1) ---
+/** men a detachment keeps, to be an army on its own [S] */
+export const DETACHMENT_MEN = 1000;
+
+// --- war aims (layer 1) ---
+/** Jin cities to take, besides the one that decides the campaign [S] */
+export const AIM_CITIES = 3;
+/** men still in the field when the campaign is over [S] */
+export const AIM_ROSTER = 2000;
+/** horses for every man when the campaign is over [S] */
+export const AIM_HORSES_PER_MAN = 2;
+/** cities the Mongols must still hold when the campaign is over [S] */
+export const AIM_HOLD = 2;
+
+// --- the khan's orders (layer 2) ---
+/** the day the first order, to take the city in the north, is due [S] */
+export const DEADLINE_CAPITAL: GameDate = { year: 1218, month: 11, day: 31, hour: 0 };
+/** the day the second order, to break a Jin army, is due [S] */
+export const DEADLINE_ARMY: GameDate = { year: 1219, month: 1, day: 28, hour: 0 };
+/** the day the last order, to take the city in the south, is due [S] */
+export const DEADLINE_SOUTH: GameDate = { year: 1219, month: 2, day: 15, hour: 0 };
+
+// --- the khan's favour (layer 2) ---
+/** the favour the khan starts with: a khan with a war in hand is not pleased [S] */
+export const FAVOUR_START = 70;
+/** the most favour the khan can have [S] */
+export const FAVOUR_MAX = 100;
+/** the favour an order fulfilled earns [S] */
+export const FAVOUR_FULFILLED = 10;
+/** the favour an order missed costs [S] */
+export const FAVOUR_MISSED = 15;
+/** the favour a town lost to the Jin costs [S] */
+export const FAVOUR_TOWN_LOST = 10;
+/** below this favour the khan is angry [S] */
+export const FAVOUR_LOW = 20;
+/** below this favour the khan is not pleased [S] */
+export const FAVOUR_PARDON = 40;
+/** below this favour the khan is content enough [S] */
+export const FAVOUR_CONTENT = 60;
+/** the part of the army that stays in a town taken back [S] */
+export const GARRISON_SHARE = 0.5;
+
+// --- booty and remounts (layer 1) ---
+/** goods a fallen town holds for every man of its garrison [S] */
+export const BOOTY_PER_MAN = 2;
+/** goods a single horse costs [S] */
+export const HORSE_PRICE = 20;
+/** days the khan's remount herds take to bring the horses [S] */
+export const REMOUNT_DAYS = 3;
+/** most horses one call can bring [S] */
+export const REMOUNT_MAX = 1000;
+/** hostility the countryside feels when a town is sacked [S] */
+export const SACK_HOSTILITY = 15;
 
 // --- events at places (layer 1) ---
 /** share of the villages' stores the elders offer to be spared [S] */
@@ -326,3 +387,13 @@ export const ICE_KM = 60;
 export const ICE_RISK = 0.1;
 /** share of the horses lost when it does [S] */
 export const ICE_LOSS = 0.02;
+/** rations a merchant caravan sells, and the goods it asks for them [S] */
+export const MERCHANT_FOOD = 1500;
+export const MERCHANT_FOOD_PRICE = 50;
+/** sheep a merchant caravan buys, and the goods it gives for them [S] */
+export const MERCHANT_SHEEP = 200;
+export const MERCHANT_SHEEP_PRICE = 40;
+/** condition a snowstorm costs the horses when the column pushes through [S] */
+export const SNOWSTORM_COLD = 10;
+/** share of the men lost pushing through a snowstorm [S] */
+export const SNOWSTORM_LOSS = 0.01;

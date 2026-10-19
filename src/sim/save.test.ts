@@ -45,6 +45,46 @@ describe("saves", () => {
     expect(() => readSave({ ...good, game: { ...good.game, sites } })).toThrow("different map");
   });
 
+  it("keeps a save made while the Jin is calling on a town", () => {
+    const s = newGame();
+    s.cities.fenzhou.taken = true;
+    Object.assign(s.columns[0], { at: "fenzhou", men: 5000, horses: 20000, rations: 1e9 });
+    Object.assign(s.jin[0], { at: "fenzhou", leg: null, route: [], order: "call", target: "fenzhou", sight: 3 });
+    for (let i = 0; i < 12 * 24 && !s.threat; i++) step(s);
+    expect(s.threat?.kind).toBe("call");
+    const loaded = readSave(JSON.stringify(makeSave(s, 0))).game;
+    expect(loaded.threat?.kind).toBe("call");
+    expect(loaded.threat?.site).toBe("fenzhou");
+  });
+
+  it("refuses a save whose armies, remounts or reserves do not fit the map", () => {
+    const good = makeSave(newGame(), 0);
+    // an army that relieves a city that is not on the map
+    expect(() => readSave({ ...good, game: { ...good.game, jin: [{ ...good.game.jin[0], relieve: { city: "atlantis", afterDays: 3 } }] } })).toThrow("damaged");
+    // remounts on the road to a place that is not on the map
+    expect(() => readSave({ ...good, game: { ...good.game, remounts: [{ site: "atlantis", horses: 100, hour: 24 }] } })).toThrow("damaged");
+    // armies that do not match the reserves that have come
+    expect(() => readSave({ ...good, game: { ...good.game, jinArrived: 1 } })).toThrow("damaged");
+  });
+
+  it("refuses a save whose orders of the khan do not make sense", () => {
+    const good = makeSave(newGame(), 0);
+    expect(() => readSave({ ...good, game: { ...good.game, dispatch: 99 } })).toThrow("damaged");
+    expect(() => readSave({ ...good, game: { ...good.game, favour: undefined } })).toThrow("damaged");
+    expect(() => readSave({ ...good, game: { ...good.game, winsAtDispatch: "many" } })).toThrow("damaged");
+  });
+
+  it("keeps the orders of the khan and the favour in the save", () => {
+    const s = newGame();
+    s.favour = 42;
+    s.dispatchesMet = 1;
+    s.dispatch = 1;
+    const loaded = readSave(JSON.stringify(makeSave(s, 0))).game;
+    expect(loaded.favour).toBe(42);
+    expect(loaded.dispatch).toBe(1);
+    expect(loaded.dispatchesMet).toBe(1);
+  });
+
   it("names the save by the date in the game", () => {
     const s = newGame();
     days(s, 3);

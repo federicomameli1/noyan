@@ -77,6 +77,9 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 .clock { display: grid; line-height: 1.2; margin-right: auto; font-variant-numeric: tabular-nums; }
 .clock b { font: 1.05rem var(--f-map); }
 .clock span { font-size: 12px; color: var(--muted); }
+/* the decisive war aim, always in sight */
+.aim-chip { font-size: 12.5px; color: var(--muted); border-left: 1px solid var(--hud-line); padding-left: 14px; }
+.aim-chip b { color: var(--ink); font-weight: 600; }
 
 button { font: 500 13px var(--f-body); color: var(--ink); background: transparent; border: 1px solid var(--hud-line); border-radius: 6px; padding: 6px 11px; cursor: pointer; }
 button:hover:not(:disabled) { background: color-mix(in srgb, var(--hud-line) 30%, transparent); }
@@ -133,6 +136,14 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; f
 dt { color: var(--muted); }
 dd { margin: 0; }
 .saves { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+/* war aims, in the campaign panel */
+.aims { margin: 0 0 4px; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 12.5px; }
+.aims li { padding-left: 9px; border-left: 2px solid var(--hud-line); }
+.aims li.met { border-left-color: var(--ok); }
+.aims li.order { border-left-color: var(--accent); }
+.aims li b { display: block; }
+.aims li .st { color: var(--muted); }
+.aims li.met .st { color: var(--ok); }
 .log { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
 .log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
 .log li.warning, .log li.alert { color: var(--bad); }

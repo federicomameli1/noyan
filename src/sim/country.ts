@@ -3,7 +3,8 @@
 // Rules: design doc "07-regole-strato-1", section 7. Numbers in constants.ts.
 
 import * as R from "./constants";
-import { dateOf, log, type Column, type GameState } from "./game";
+import { dateOf, type Column, type GameState } from "./game";
+import { log } from "./journal";
 import { raiseEvent } from "./events";
 import type { Site } from "./graph";
 import { SCENARIO } from "./scenario";
@@ -85,7 +86,7 @@ export function cancelForage(s: GameState, c: Column) {
 }
 
 /** Raises the hostility of a place, and half as much in the places around it: word travels. */
-function anger(s: GameState, id: string, by: number) {
+export function anger(s: GameState, id: string, by: number) {
   const raise = (x: string, v: number) => { if (population(graph.site(x))) s.sites[x].hostility = Math.min(100, s.sites[x].hostility + v); };
   raise(id, by);
   for (const n of graph.neighbours(id)) raise(n.to, by * R.HOSTILITY_SPILL);

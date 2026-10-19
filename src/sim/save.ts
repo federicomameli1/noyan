@@ -3,11 +3,12 @@
 import { dateOf, type GameState } from "./game";
 import { formatDate } from "./calendar";
 import { isEventId } from "./events";
+import { DISPATCHES } from "./goals";
 import { SCENARIO } from "./scenario";
 
 export const SAVE_FORMAT = "noyan-save";
 /** raised when the shape of GameState changes, so old saves are refused instead of breaking the game */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 9;
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;
@@ -46,9 +47,16 @@ export function readSave(data: unknown): SaveFile {
 
   const g = d.game;
   if (!isObject(g) || !isNumber(g.hour) || g.hour < 0 || !Array.isArray(g.columns) || !g.columns.length
-    || !Array.isArray(g.jin) || g.jin.length !== SCENARIO.jin.length || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
-    || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities) || !Array.isArray(g.log) || !isNumber(g.arrived) || typeof g.over !== "boolean") fail("The save is damaged.");
+    || !Array.isArray(g.jin) || g.jin.length < SCENARIO.jin.length || g.jin.length > SCENARIO.jin.length + SCENARIO.jinReserves.length
+    || !isNumber(g.jinArrived) || g.jinArrived !== g.jin.length - SCENARIO.jin.length || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
+    || !isNumber(g.treasury) || !Array.isArray(g.remounts) || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities)
+    || !Array.isArray(g.log) || !isNumber(g.arrived) || !isNumber(g.wins) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;
+  // the khan's orders, and the favour they are worth
+  if (!isNumber(game.dispatch) || game.dispatch < 0 || game.dispatch > DISPATCHES.length
+    || !isNumber(game.favour) || !isNumber(game.winsAtDispatch)
+    || !isNumber(game.dispatchesMet) || !isNumber(game.dispatchesMissed)
+    || !Array.isArray(game.dispatchResults) || !game.dispatchResults.every(r => r === "met" || r === "missed")) fail("The save is damaged.");
   for (const c of game.columns) {
     if (!isObject(c) || typeof c.name !== "string" || !isNumber(c.men) || !isNumber(c.horses) || !isNumber(c.condition) || !isNumber(c.morale)
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");
@@ -56,8 +64,16 @@ export function readSave(data: unknown): SaveFile {
   // a field army must know its food: saves made before the Jin were supplied have none
   for (const a of game.jin) {
     if (!isObject(a) || !isNumber(a.food)) fail("The save is damaged.");
+    // the city an army relieves must be a city of the map, or the army breaks at midnight
+    if (a.relieve !== undefined && (!isObject(a.relieve) || typeof a.relieve.city !== "string"
+      || !SCENARIO.cities[a.relieve.city] || !isNumber(a.relieve.afterDays))) fail("The save is damaged.");
   }
-  if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders))) fail("The save is damaged.");
+  if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders) || !isNumber(st.remounts))) fail("The save is damaged.");
+  // a city knows the hour it fell and the goods it still holds
+  if (Object.values(game.cities).some(c => !isObject(c) || typeof c.taken !== "boolean" || typeof c.sacked !== "boolean" || !isNumber(c.booty) || (c.takenAt !== null && !isNumber(c.takenAt)))) fail("The save is damaged.");
+  // the remounts on the road, and the place they are going to
+  if (game.remounts.some(r => !isObject(r) || typeof r.site !== "string" || !isNumber(r.horses) || !isNumber(r.hour)
+    || !SCENARIO.graph.sites.some(x => x.id === r.site))) fail("The save is damaged.");
   // every place of the map must be there, and nothing else: a save of an older map would break the routes
   const siteIds = SCENARIO.graph.sites.map(s => s.id).sort().join();
   if (Object.keys(game.sites).sort().join() !== siteIds) fail("The save was made on a different map.");
@@ -65,7 +81,9 @@ export function readSave(data: unknown): SaveFile {
 
   // saves made before a Jin army could catch a column
   game.threat ??= null;
-  if (game.threat && ((game.threat.kind !== "attack" && game.threat.kind !== "relief") || !isNumber(game.threat.column) || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army])) fail("The save is damaged.");
+  if (game.threat && (!["attack", "relief", "call"].includes(game.threat.kind) || !isNumber(game.threat.column)
+    || !game.columns[game.threat.column] || !isNumber(game.threat.army) || !game.jin[game.threat.army]
+    || typeof game.threat.site !== "string" || !SCENARIO.graph.sites.some(x => x.id === game.threat!.site))) fail("The save is damaged.");
   // saves made before an event could wait for an answer
   if (!Array.isArray(game.eventsDone) || !game.eventsDone.every(k => typeof k === "string")) fail("The save is damaged.");
   const ev: unknown = game.event;
