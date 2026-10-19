@@ -4,7 +4,8 @@
 
 import * as R from "./constants";
 import { anger } from "./country";
-import { log, type GameState } from "./game";
+import type { GameState } from "./game";
+import { log } from "./journal";
 import { SCENARIO } from "./scenario";
 
 const graph = SCENARIO.graph;
@@ -57,11 +58,13 @@ export function orderRemounts(s: GameState, ci: number, horses: number): boolean
 
 /** Once an hour: the remounts that arrive wait at their place, and a column there takes them. */
 export function stepBooty(s: GameState) {
-  for (const [i, r] of s.remounts.entries()) {
-    if (s.hour < r.hour) continue;
+  // the orders that are due leave the list first: taking them out while going through the
+  // list would skip the one that follows
+  const due = s.remounts.filter(r => s.hour >= r.hour);
+  s.remounts = s.remounts.filter(r => s.hour < r.hour);
+  for (const r of due) {
     s.sites[r.site].remounts += r.horses;
     log(s, `${fmt(r.horses)} remounts reach ${graph.site(r.site).name}.`);
-    s.remounts.splice(i, 1);
   }
   for (const c of s.columns) {
     if (!c.at || c.men <= 0) continue;

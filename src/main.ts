@@ -1,6 +1,6 @@
 import "./style.css";
 import {
-  HERDERS_REGROW, HORSE_PRICE, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
+  HERDERS_REGROW, HORSE_PRICE, DETACHMENT_MEN, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
   battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
@@ -467,7 +467,7 @@ function splitButtons(c: Column) {
   const buttons: string[] = [];
   if (split) {
     buttons.push(`<button id="split-half" title="Two columns, each with half the men, each with its own orders">Divide in two</button>`);
-    if (c.men >= DEFEAT_MEN + 1000) buttons.push(`<button id="split-1000" title="A detachment of ${fmt(1000)} men marches off on its own">Detachment of 1,000</button>`);
+    if (c.men >= DEFEAT_MEN + DETACHMENT_MEN) buttons.push(`<button id="split-1000" title="A detachment of ${fmt(DETACHMENT_MEN)} men marches off on its own">Detachment of ${fmt(DETACHMENT_MEN)}</button>`);
   }
   if (other >= 0) buttons.push(`<button id="merge" title="Join the two columns into one">Join ${game.columns[other].name}</button>`);
   if (!buttons.length) return "";
@@ -548,7 +548,7 @@ function renderColumn() {
     if (orderRemounts(game, active, n)) { render(); setPlaying(true); }
   });
   panel.querySelector<HTMLButtonElement>("#split-half")?.addEventListener("click", () => { orderSplit(game, active, Math.floor(col().men / 2)); render(); });
-  panel.querySelector<HTMLButtonElement>("#split-1000")?.addEventListener("click", () => { orderSplit(game, active, 1000); render(); });
+  panel.querySelector<HTMLButtonElement>("#split-1000")?.addEventListener("click", () => { orderSplit(game, active, DETACHMENT_MEN); render(); });
   panel.querySelector<HTMLButtonElement>("#merge")?.addEventListener("click", () => {
     const other = companionColumn(game, col(), active);
     if (other < 0) return;

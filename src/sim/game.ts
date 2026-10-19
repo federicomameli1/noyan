@@ -7,11 +7,15 @@ import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
 import { decisiveAimMet } from "./goals";
+import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { bootyOf, stepBooty } from "./booty";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
+
+export { log } from "./journal";
+export type { LogEntry } from "./journal";
 
 export interface Leg {
   from: string;
@@ -125,15 +129,7 @@ export interface CityState {
   sacked: boolean;
 }
 
-export interface LogEntry {
-  hour: number;
-  text: string;
-  /** entries the player should not miss: arrivals and alerts pause the game, warnings do not */
-  kind?: "arrival" | "alert" | "warning";
-}
-
-export interface GameState {
-  /** hours since the start of the scenario */
+export interface GameState {  /** hours since the start of the scenario */
   hour: number;
   columns: Column[];
   /** Jin armies in the field */
@@ -817,10 +813,6 @@ export function takeFromHerders(s: GameState, ci: number, n: number): boolean {
 }
 
 // --- simulation ---
-
-export function log(s: GameState, text: string, kind?: LogEntry["kind"]) {
-  s.log.push(kind ? { hour: s.hour, text, kind } : { hour: s.hour, text });
-}
 
 /** Advances the game by one hour. */
 export function step(s: GameState) {

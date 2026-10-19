@@ -30,10 +30,18 @@ describe("dividing a column", () => {
   });
 
   it("a column too small to be divided is left alone", () => {
-    const s = columnOf(DEFEAT_MEN * 2);
+    const s = columnOf(DEFEAT_MEN * 2 - 1);
     expect(canSplit(col(s))).toBe(false);
     expect(orderSplit(s, 0, 1000)).toBe(false);
     expect(s.columns).toHaveLength(1);
+  });
+
+  it("a column of two thousand can be divided: both halves are an army", () => {
+    const s = columnOf(DEFEAT_MEN * 2);
+    expect(canSplit(col(s))).toBe(true);
+    expect(orderSplit(s, 0, 1000)).toBe(true);
+    expect(s.columns[1].men).toBe(1000);
+    expect(col(s).men).toBe(1000);
   });
 
   it("the part that goes away keeps at least a thousand men", () => {

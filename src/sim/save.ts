@@ -47,7 +47,7 @@ export function readSave(data: unknown): SaveFile {
   const g = d.game;
   if (!isObject(g) || !isNumber(g.hour) || g.hour < 0 || !Array.isArray(g.columns) || !g.columns.length
     || !Array.isArray(g.jin) || g.jin.length < SCENARIO.jin.length || g.jin.length > SCENARIO.jin.length + SCENARIO.jinReserves.length
-    || !isNumber(g.jinArrived) || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
+    || !isNumber(g.jinArrived) || g.jinArrived !== g.jin.length - SCENARIO.jin.length || !Array.isArray(g.convoys) || !isNumber(g.convoyDay)
     || !isNumber(g.treasury) || !Array.isArray(g.remounts) || !isNumber(g.rng) || !isObject(g.sites) || !isObject(g.cities)
     || !Array.isArray(g.log) || !isNumber(g.arrived) || !isNumber(g.wins) || typeof g.over !== "boolean") fail("The save is damaged.");
   const game = g as unknown as GameState;
@@ -58,12 +58,16 @@ export function readSave(data: unknown): SaveFile {
   // a field army must know its food: saves made before the Jin were supplied have none
   for (const a of game.jin) {
     if (!isObject(a) || !isNumber(a.food)) fail("The save is damaged.");
+    // the city an army relieves must be a city of the map, or the army breaks at midnight
+    if (a.relieve !== undefined && (!isObject(a.relieve) || typeof a.relieve.city !== "string"
+      || !SCENARIO.cities[a.relieve.city] || !isNumber(a.relieve.afterDays))) fail("The save is damaged.");
   }
   if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders) || !isNumber(st.remounts))) fail("The save is damaged.");
   // a city knows the hour it fell and the goods it still holds
   if (Object.values(game.cities).some(c => !isObject(c) || typeof c.taken !== "boolean" || typeof c.sacked !== "boolean" || !isNumber(c.booty) || (c.takenAt !== null && !isNumber(c.takenAt)))) fail("The save is damaged.");
-  // the remounts on the road
-  if (game.remounts.some(r => !isObject(r) || typeof r.site !== "string" || !isNumber(r.horses) || !isNumber(r.hour))) fail("The save is damaged.");
+  // the remounts on the road, and the place they are going to
+  if (game.remounts.some(r => !isObject(r) || typeof r.site !== "string" || !isNumber(r.horses) || !isNumber(r.hour)
+    || !SCENARIO.graph.sites.some(x => x.id === r.site))) fail("The save is damaged.");
   // every place of the map must be there, and nothing else: a save of an older map would break the routes
   const siteIds = SCENARIO.graph.sites.map(s => s.id).sort().join();
   if (Object.keys(game.sites).sort().join() !== siteIds) fail("The save was made on a different map.");

@@ -34,12 +34,12 @@ describe("the war aims", () => {
 
   it("towns taken are counted for the aim", () => {
     const s = newGame();
-    expect(aimMet(s, aim("towns"))).toBe(false);
+    expect(aimMet(s, aim("cities"))).toBe(false);
     s.cities.daizhou.taken = true;
     s.cities.yuanping.taken = true;
-    expect(aimMet(s, aim("towns"))).toBe(false);
+    expect(aimMet(s, aim("cities"))).toBe(false);
     s.cities.yuci.taken = true;
-    expect(aimMet(s, aim("towns"))).toBe(true);
+    expect(aimMet(s, aim("cities"))).toBe(true);
   });
 
   it("a Jin army broken in the open is counted", () => {
@@ -64,7 +64,7 @@ describe("the war aims", () => {
   it("every aim says how it stands", () => {
     const s = newGame();
     expect(aim("capital").status(s)).toBe("still standing");
-    expect(aim("towns").status(s)).toBe("0 of 3 towns taken");
+    expect(aim("cities").status(s)).toBe("0 of 3 cities taken");
     expect(aim("rout").status(s)).toBe("no army broken yet");
     s.cities.taiyuan.progress = 42;
     expect(aim("capital").status(s)).toBe("besieged, 42%");

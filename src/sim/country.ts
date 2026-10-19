@@ -3,7 +3,8 @@
 // Rules: design doc "07-regole-strato-1", section 7. Numbers in constants.ts.
 
 import * as R from "./constants";
-import { dateOf, log, type Column, type GameState } from "./game";
+import { dateOf, type Column, type GameState } from "./game";
+import { log } from "./journal";
 import { raiseEvent } from "./events";
 import type { Site } from "./graph";
 import { SCENARIO } from "./scenario";

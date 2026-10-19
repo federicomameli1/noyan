@@ -3,13 +3,14 @@
 // its own orders, and a column too small to campaign is not worth having.
 
 import * as R from "./constants";
-import { conditionBand, foodDays, log, type Column, type GameState } from "./game";
+import { conditionBand, foodDays, type Column, type GameState } from "./game";
+import { log } from "./journal";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("en");
 
 /** True if the column can be divided in two: it stands at a place, and both halves would be an army. */
 export function canSplit(c: Column): boolean {
-  return !!c.at && !c.leg && c.men >= 2 * R.DEFEAT_MEN + 1;
+  return !!c.at && !c.leg && c.men >= 2 * R.DEFEAT_MEN;
 }
 
 /** The most men a column can send away and still be an army on its own. */

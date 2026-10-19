@@ -7,9 +7,10 @@ tagged [D] documented, [R] modern estimate, [S] game estimate. This file explain
 ## The aim of the campaign
 
 The campaign is won by taking Taiyuan, the Jin's northern city, before the spring
-thaw (31 March 1219). Around that one aim there are honours, judged when the
-campaign is over: three Jin towns taken, a Jin army broken in the open, two
-thousand men still in the field, two horses for every man.
+thaw (31 March 1219). Around that one aim there are honours: three Jin cities
+taken and a Jin army broken in the open, which are judged as the campaign goes,
+and two thousand men still in the field and two horses for every man, which are
+judged when the campaign is over.
 
 The decisive aim is the only one that ends the war. It is always in sight in the
 top bar; the others are in the campaign panel, under the saves.

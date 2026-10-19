@@ -94,6 +94,18 @@ describe("remounts", () => {
     expect(s.treasury).toBe(205 - 10 * HORSE_PRICE);
   });
 
+  it("two calls due in the same hour both arrive", () => {
+    const s = newGame();
+    s.treasury = 4000;
+    orderRemounts(s, 0, 100);
+    orderRemounts(s, 0, 100);
+    expect(s.remounts).toHaveLength(2);
+    const horses = col(s).horses;
+    hours(s, REMOUNT_DAYS * 24 + 1);
+    expect(col(s).horses).toBe(horses + 200);
+    expect(s.remounts).toHaveLength(0);
+  });
+
   it("remounts that arrive where no column stands wait for one", () => {
     const s = newGame();
     s.treasury = 2000;

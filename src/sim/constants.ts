@@ -287,9 +287,13 @@ export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
 
+// --- columns (layer 1) ---
+/** men a detachment keeps, to be an army on its own [S] */
+export const DETACHMENT_MEN = 1000;
+
 // --- war aims (layer 1) ---
-/** Jin towns to take, besides the city that decides the campaign [S] */
-export const AIM_TOWNS = 3;
+/** Jin cities to take, besides the one that decides the campaign [S] */
+export const AIM_CITIES = 3;
 /** men still in the field when the campaign is over [S] */
 export const AIM_ROSTER = 2000;
 /** horses for every man when the campaign is over [S] */

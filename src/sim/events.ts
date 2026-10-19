@@ -4,7 +4,8 @@
 // changes the least, so a simulation with no player never gets stuck. Numbers in constants.ts.
 
 import * as R from "./constants";
-import { dateOf, jumpAhead, log, random, type Column, type GameState, type PendingEvent } from "./game";
+import { dateOf, jumpAhead, random, type Column, type GameState, type PendingEvent } from "./game";
+import { log } from "./journal";
 import { orderForage, population } from "./country";
 import { linkBetween, type Link } from "./graph";
 import { SCENARIO } from "./scenario";
@@ -302,12 +303,17 @@ const alongTheFen = (link: Link) => link.kind === "road" && R.ICE_SITES.includes
 /** True in the deep of the winter: December, January and February. */
 const isDeepWinter = (s: GameState) => [11, 0, 1].includes(dateOf(s).month);
 
-/** Raises the Khitan deserters right after a Mongol win, within a day of the battle. */
+/**
+ * Raises the Khitan deserters right after a Mongol win, within a day of the battle.
+ * The column is found by its name; if it has been joined with another one since, the
+ * column that stands where the battle was fought is the one that takes them in.
+ */
 function raiseDeserters(s: GameState): boolean {
   const b = s.lastBattle;
   if (!b || s.hour - b.hour >= 24) return false;
   if (b.result.outcome !== "rout" && b.result.outcome !== "victory") return false;
-  const ci = s.columns.findIndex(c => c.name === b.column);
+  const byName = s.columns.findIndex(c => c.name === b.column);
+  const ci = byName >= 0 ? byName : s.columns.findIndex(c => c.at === b.site && c.men > 0);
   return ci >= 0 && s.columns[ci].men > 0 && raiseEvent(s, "deserters", ci, b.site);
 }
 

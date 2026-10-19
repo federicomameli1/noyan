@@ -45,6 +45,16 @@ describe("saves", () => {
     expect(() => readSave({ ...good, game: { ...good.game, sites } })).toThrow("different map");
   });
 
+  it("refuses a save whose armies, remounts or reserves do not fit the map", () => {
+    const good = makeSave(newGame(), 0);
+    // an army that relieves a city that is not on the map
+    expect(() => readSave({ ...good, game: { ...good.game, jin: [{ ...good.game.jin[0], relieve: { city: "atlantis", afterDays: 3 } }] } })).toThrow("damaged");
+    // remounts on the road to a place that is not on the map
+    expect(() => readSave({ ...good, game: { ...good.game, remounts: [{ site: "atlantis", horses: 100, hour: 24 }] } })).toThrow("damaged");
+    // armies that do not match the reserves that have come
+    expect(() => readSave({ ...good, game: { ...good.game, jinArrived: 1 } })).toThrow("damaged");
+  });
+
   it("names the save by the date in the game", () => {
     const s = newGame();
     days(s, 3);

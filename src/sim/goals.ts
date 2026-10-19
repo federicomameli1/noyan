@@ -1,5 +1,6 @@
 // War aims (layer 1): what the campaign is for. One decisive aim ends the war when it is met;
-// the others are honours, judged when the campaign is over. Numbers in constants.ts.
+// the others are honours, some judged as the campaign goes and some when it is over.
+// Numbers in constants.ts.
 //
 // The aims read the state of the game and never change it: the game asks goals.ts whether the
 // decisive aim is met, and the interface asks it how each aim stands.
@@ -25,7 +26,7 @@ export interface Aim {
 }
 
 const cityName = (id: string) => SCENARIO.graph.site(id).name;
-const townsTaken = (s: GameState) => Object.values(s.cities).filter(c => c.taken).length;
+const citiesTaken = (s: GameState) => Object.values(s.cities).filter(c => c.taken).length;
 const menInField = (s: GameState) => s.columns.reduce((n, c) => n + c.men, 0);
 const horsesInField = (s: GameState) => s.columns.reduce((n, c) => n + c.horses, 0);
 
@@ -46,13 +47,13 @@ export const AIMS: readonly Aim[] = [
     },
   },
   {
-    id: "towns",
-    name: `Take ${R.AIM_TOWNS} Jin towns`,
-    desc: "The war is not won by one city: the countryside behind it has to be held as well.",
+    id: "cities",
+    name: `Take ${R.AIM_CITIES} Jin cities`,
+    desc: "The war is not won by one city: the country behind it has to be held as well.",
     decisive: false,
     atEnd: false,
-    met: s => townsTaken(s) >= R.AIM_TOWNS,
-    status: s => `${townsTaken(s)} of ${R.AIM_TOWNS} towns taken`,
+    met: s => citiesTaken(s) >= R.AIM_CITIES,
+    status: s => `${citiesTaken(s)} of ${R.AIM_CITIES} cities taken`,
   },
   {
     id: "rout",

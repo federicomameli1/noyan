@@ -7,7 +7,8 @@
 import * as R from "./constants";
 import { strength } from "./battle";
 import { distanceKm, findPath, type Site } from "./graph";
-import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, log, orderFight, type Column, type GameState, type Leg, type Mover } from "./game";
+import { advance, armyForce, battleGround, campSite, columnForce, columnPosition, conditionBand, dateOf, orderFight, type Column, type GameState, type Leg, type Mover } from "./game";
+import { log } from "./journal";
 import { daysBetween } from "./calendar";
 import { SCENARIO, type JinArmySpec } from "./scenario";
 
