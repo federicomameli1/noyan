@@ -108,6 +108,16 @@ describe("a whole campaign", () => {
     expect(s.log.filter(l => l.text.includes("A letter from the khan")).length).toBe(3);
   });
 
+  it("a campaign with no orders at all ends without breaking", () => {
+    const s = newGame();
+    while (!s.over && s.hour < totalHours()) {
+      for (let h = 0; h < 24 && !s.over; h++) step(s);
+    }
+    expect(s.over).toBe(true);
+    expect(s.result).toBe("defeat");
+    expect(s.log.at(-1)!.text).toMatch(/Defeat/);
+  });
+
   it("a column with no men cannot besiege a city", () => {
     const s = newGame();
     s.columns[0].men = 100;
