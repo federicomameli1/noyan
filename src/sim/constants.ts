@@ -287,6 +287,14 @@ export const HERDERS_RESERVE = 2500;
 /** sheep per day the reserve grows back, up to HERDERS_RESERVE [S] */
 export const HERDERS_REGROW = 40;
 
+// --- war aims (layer 1) ---
+/** Jin towns to take, besides the city that decides the campaign [S] */
+export const AIM_TOWNS = 3;
+/** men still in the field when the campaign is over [S] */
+export const AIM_ROSTER = 2000;
+/** horses for every man when the campaign is over [S] */
+export const AIM_HORSES_PER_MAN = 2;
+
 // --- events at places (layer 1) ---
 /** share of the villages' stores the elders offer to be spared [S] */
 export const TRIBUTE_SHARE = 1 / 3;

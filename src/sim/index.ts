@@ -11,4 +11,5 @@ export * from "./jin";
 export * from "./battle";
 export * from "./country";
 export * from "./events";
+export * from "./goals";
 export * from "./save";

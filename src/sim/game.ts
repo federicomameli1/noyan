@@ -6,6 +6,7 @@ import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
 import { findPath, linkBetween, type Graph, type Site } from "./graph";
+import { decisiveAimMet } from "./goals";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
 import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
@@ -113,6 +114,8 @@ export interface CityState {
   /** 0-100: at 100 the city falls */
   progress: number;
   taken: boolean;
+  /** the hour the city fell, or null while it stands */
+  takenAt: number | null;
 }
 
 export interface LogEntry {
@@ -137,6 +140,8 @@ export interface GameState {
   log: LogEntry[];
   /** reinforcements from the scenario already arrived */
   arrived: number;
+  /** battles won outright: a Jin army broken in the open */
+  wins: number;
   /** state of the battle dice: each battle draws its luck from it */
   rng: number;
   /** the last battle fought, for the report */
@@ -208,10 +213,10 @@ export function newGame(sheep = 0): GameState {
   for (const s of graph.sites) sites[s.id] = { grazed: 0, sheep: 0, herders: hasHerders(s) ? R.HERDERS_RESERVE : 0, ...newCountry(s) };
   const cities: Record<string, CityState> = {};
   for (const [id, x] of Object.entries(SCENARIO.cities)) {
-    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false };
+    cities[id] = { type: x.type, garrison: x.garrison, walls: x.walls ?? R.CITY_TYPES[x.type].walls, stores: x.stores, storesAtStart: x.stores, besiegedDays: 0, progress: 0, taken: false, takenAt: null };
   }
   return {
-    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, sites, cities, arrived: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
+    hour: 0, columns: [col], jin: newJin(), convoys: [], convoyDay: 0, sites, cities, arrived: 0, wins: 0, rng: R.BATTLE_SEED, lastBattle: null, threat: null, event: null, eventsDone: [], over: false, result: null,
     log: [{ hour: 0, text: `${c.name} is at ${graph.site(SCENARIO.base).name} with ${c.men.toLocaleString("en")} men. Take ${graph.site(SCENARIO.objective).name} before spring. Spies say the Jin are gathering an army at Pingyang, in the south.` }],
   };
 }
@@ -484,6 +489,7 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   const city = s.cities[id];
   const got = spoils(c, city, stormed);
   city.taken = true;
+  city.takenAt = s.hour;
   city.stores = 0;
   cityFalls(s, id);
   for (const o of s.columns) if (o.siege === id) o.siege = null;
@@ -496,10 +502,10 @@ function capture(s: GameState, c: Column, id: string, stormed = false) {
   if (got.recruits) gains.push(`${got.recruits.toLocaleString("en")} men from the garrison, on foot`);
   const opened = got.opensPass ? " The road through the pass is open." : "";
   log(s, `${graph.site(id).name} falls. ${c.name} gains ${gains.join(", ")}.${opened}`, "arrival");
-  if (id === SCENARIO.objective) {
+  if (decisiveAimMet(s)) {
     s.result = "victory";
     s.over = true;
-    log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}.`, "arrival");
+    log(s, `Victory: ${graph.site(id).name} is taken on ${formatDate(dateOf(s))}. The war is over.`, "arrival");
   }
 }
 
@@ -581,6 +587,8 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
   const city = s.cities[site.id];
   if (garrisonLost && city) city.garrison = Math.max(0, city.garrison - garrisonLost);
   a.morale = clamp(a.morale + b.r.morale.jin, 0, 100);
+  // a Jin army broken in the open: the war aims count it
+  if (b.r.outcome === "rout" || b.r.outcome === "victory") s.wins += 1;
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
   const jinDone = b.r.outcome === "draw" || b.r.outcome === "victory" || b.r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;

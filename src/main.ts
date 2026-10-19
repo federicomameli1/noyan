@@ -5,6 +5,7 @@ import {
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
   describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
+  AIMS, aimMet,
 } from "./sim";
 import * as saves from "./ui/saves";
 import { LABELS, TARGET_TEXT, cssVar, createMap, helmet, jinBanner, mix, targetSymbol, type ArmyMark, type ConvoyMark, type Layer } from "./ui/map";
@@ -556,6 +557,18 @@ function renderPreview() {
   }
 }
 
+// --- war aims: what the campaign is for ---
+/** The aims, in the campaign panel, and the decisive one in the top bar. */
+function renderAims() {
+  $("aims").innerHTML = AIMS.map(a => {
+    const met = aimMet(game, a);
+    const cls = [met ? "met" : "", a.decisive ? "decisive" : ""].filter(Boolean).join(" ");
+    return `<li class="${cls}"><b>${a.name}</b><span class="st">${a.status(game)}</span><div class="note">${a.desc}</div></li>`;
+  }).join("");
+  const main = AIMS.find(a => a.decisive)!;
+  $("aim-chip").innerHTML = `<b>${main.name}</b> · ${main.status(game)}`;
+}
+
 function render() {
   renderLog(); // first: a new arrival or alert pauses the game, and the rest must show that
   const d = dateOf(game);
@@ -573,6 +586,7 @@ function render() {
   renderColumn();
   renderPlace();
   renderBattle();
+  renderAims();
 }
 
 function renderColumns() {
@@ -755,13 +769,18 @@ function showEnd() {
   const menAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men, 0);
   const horsesAtStart = [SCENARIO.column, ...sent].reduce((n, c) => n + c.men * c.horsesPerMan, 0);
   const taken = Object.entries(game.cities).filter(([, x]) => x.taken).map(([id]) => graph.site(id).name);
+  const aims = AIMS.map(a => {
+    const met = aimMet(game, a, true);
+    return `<dt>${a.name}</dt><dd class="${met ? "t-ok" : "t-warn"}">${met ? "met" : "not met"}</dd>`;
+  }).join("");
   const win = game.result === "victory";
   $("end-title").textContent = win ? "Taiyuan has fallen" : "The campaign has failed";
   setHTML($("end-body"), `<p>${game.log.at(-1)?.text ?? ""}</p><dl>
     <dt>Date</dt><dd>${formatDate(dateOf(game))}</dd>
     <dt>Men</dt><dd>${fmt(men)} of ${fmt(menAtStart)}</dd>
     <dt>Horses</dt><dd>${fmt(horses)} of ${fmt(horsesAtStart)}</dd>
-    <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd></dl>`);
+    <dt>Towns taken</dt><dd>${taken.length ? taken.join(", ") : "none"}</dd>
+    ${aims}</dl>`);
   $("end").hidden = false;
 }
 $("again").onclick = () => location.reload();

@@ -33,6 +33,7 @@
       <header class="hud topbar">
         <b class="brand">Noyan</b>
         <div class="clock"><b id="date"></b><span id="clock-hour"></span></div>
+        <span class="aim-chip" id="aim-chip"></span>
         <div class="seg" role="group" aria-label="Time">
           <button id="play" class="icon" aria-label="Pause">❚❚</button>
           <span class="seg" id="speeds"></span>
@@ -55,6 +56,8 @@
           <input type="file" id="import-file" accept=".json,application/json" hidden />
         </div>
         <p class="note" id="save-note">The game also saves itself every day.</p>
+        <h3>War aims</h3>
+        <ul class="aims" id="aims"></ul>
         <h3 id="leg-title">Legend</h3>
         <dl id="legend"></dl>
         <h3>Journal</h3>
