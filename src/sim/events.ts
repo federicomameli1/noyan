@@ -14,7 +14,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("en");
 /** A share as the whole number the player reads on the button: 0.3 becomes 30. */
 const pct = (x: number) => Math.round(x * 100);
 
-export type EventId = "tribute" | "frost" | "herd" | "guides" | "deserters" | "ice";
+export type EventId = "tribute" | "frost" | "herd" | "guides" | "deserters" | "ice" | "merchant" | "snow";
 
 /** One choice of an event: what the button says, and what it costs. */
 export interface EventChoice {
@@ -182,6 +182,56 @@ const EVENTS: Record<EventId, EventDef> = {
       log(s, `${c.name} crosses the frozen Fen on the ice, ${fmt(km)} km on.`);
     },
   },
+  merchant: {
+    title: "A merchant caravan",
+    once: "game",
+    text: () => "A caravan of merchants from the north has met the column on the road.",
+    choices: (s, ev) => {
+      const c = s.columns[ev.column];
+      return [
+        { label: "Buy food", cost: s.treasury >= R.MERCHANT_FOOD_PRICE ? `${fmt(R.MERCHANT_FOOD)} rations for ${R.MERCHANT_FOOD_PRICE} goods` : `not enough goods (${fmt(s.treasury)})` },
+        { label: "Sell our sheep", cost: c.sheep >= R.MERCHANT_SHEEP ? `${fmt(R.MERCHANT_SHEEP)} sheep for ${R.MERCHANT_SHEEP_PRICE} goods` : `not enough sheep (${fmt(c.sheep)})` },
+        { label: "Let them pass", cost: "nothing" },
+      ];
+    },
+    apply: (s, ev, choice) => {
+      const c = s.columns[ev.column];
+      if (choice === 0 && s.treasury >= R.MERCHANT_FOOD_PRICE) {
+        s.treasury -= R.MERCHANT_FOOD_PRICE;
+        c.rations += R.MERCHANT_FOOD;
+        log(s, `${c.name} buys ${fmt(R.MERCHANT_FOOD)} rations from the merchants for ${R.MERCHANT_FOOD_PRICE} goods.`);
+        return;
+      }
+      if (choice === 1 && c.sheep >= R.MERCHANT_SHEEP) {
+        c.sheep -= R.MERCHANT_SHEEP;
+        s.treasury += R.MERCHANT_SHEEP_PRICE;
+        log(s, `${c.name} sells ${fmt(R.MERCHANT_SHEEP)} sheep to the merchants for ${R.MERCHANT_SHEEP_PRICE} goods.`);
+        return;
+      }
+      log(s, `${c.name} lets the merchants pass without trading.`);
+    },
+  },
+  snow: {
+    title: "A snowstorm in the pass",
+    once: "game",
+    text: () => "Snow has closed the pass behind the column: the road ahead is under a metre of snow.",
+    choices: () => [
+      { label: "Push through", cost: `condition −${R.SNOWSTORM_COLD}, ${pct(R.SNOWSTORM_LOSS)}% of the men lost` },
+      { label: "Wait out the storm", cost: "a day lost" },
+    ],
+    apply: (s, ev, choice) => {
+      const c = s.columns[ev.column];
+      if (choice === 0) {
+        const lost = Math.round(c.men * R.SNOWSTORM_LOSS);
+        c.men = Math.max(0, c.men - lost);
+        c.condition = Math.max(0, c.condition - R.SNOWSTORM_COLD);
+        log(s, `${c.name} pushes through the snow: ${fmt(lost)} men are lost and the horses suffer.`, "warning");
+        return;
+      }
+      c.restUntil = s.hour + 24;
+      log(s, `${c.name} waits out the storm, a day lost.`);
+    },
+  },
 };
 
 export const isEventId = (v: unknown): v is EventId => typeof v === "string" && v in EVENTS;
@@ -245,8 +295,8 @@ function guideOffered(s: GameState, site: string, link: Link): boolean {
 /** True if the road ahead runs down the Fen valley, where the river can be crossed on the ice. */
 const alongTheFen = (link: Link) => link.kind === "road" && R.ICE_SITES.includes(link.a) && R.ICE_SITES.includes(link.b);
 
-/** True in the months of ice: December, January and February. */
-const isIceSeason = (s: GameState) => [11, 0, 1].includes(dateOf(s).month);
+/** True in the deep of the winter: December, January and February. */
+const isDeepWinter = (s: GameState) => [11, 0, 1].includes(dateOf(s).month);
 
 /** Raises the Khitan deserters right after a Mongol win, within a day of the battle. */
 function raiseDeserters(s: GameState): boolean {
@@ -273,6 +323,11 @@ export function checkEvents(s: GameState) {
     // a farmer offers to guide the column by a hidden path through the mountains
     if (guideOffered(s, road.site, road.link) && raiseEvent(s, "guides", ci, road.site)) return;
     // the Fen is frozen: the column can cross on the ice instead of going round by the bridges
-    if (isIceSeason(s) && alongTheFen(road.link) && raiseEvent(s, "ice", ci, road.site)) return;
+    if (isDeepWinter(s) && alongTheFen(road.link) && raiseEvent(s, "ice", ci, road.site)) return;
+    // a merchant caravan on the road: it buys sheep and sells food
+    if (road.link.kind === "road" && (s.treasury >= R.MERCHANT_FOOD_PRICE || s.columns[ci].sheep >= R.MERCHANT_SHEEP)
+      && raiseEvent(s, "merchant", ci, road.site)) return;
+    // snow closes the passes in the deep of the winter
+    if (isDeepWinter(s) && road.link.kind === "pass" && raiseEvent(s, "snow", ci, road.site)) return;
   }
 }

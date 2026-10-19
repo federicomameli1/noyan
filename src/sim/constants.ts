@@ -346,3 +346,13 @@ export const ICE_KM = 60;
 export const ICE_RISK = 0.1;
 /** share of the horses lost when it does [S] */
 export const ICE_LOSS = 0.02;
+/** rations a merchant caravan sells, and the goods it asks for them [S] */
+export const MERCHANT_FOOD = 1500;
+export const MERCHANT_FOOD_PRICE = 50;
+/** sheep a merchant caravan buys, and the goods it gives for them [S] */
+export const MERCHANT_SHEEP = 200;
+export const MERCHANT_SHEEP_PRICE = 40;
+/** condition a snowstorm costs the horses when the column pushes through [S] */
+export const SNOWSTORM_COLD = 10;
+/** share of the men lost pushing through a snowstorm [S] */
+export const SNOWSTORM_LOSS = 0.01;

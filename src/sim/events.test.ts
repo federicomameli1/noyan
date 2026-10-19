@@ -348,6 +348,67 @@ describe("jumpAhead", () => {
   });
 });
 
+describe("the merchant caravan", () => {
+  it("meets the column on the road, and sells food for goods", () => {
+    const s = at("huairen");
+    s.treasury = 100;
+    orderMarch(s, 0, "yingzhou"); // a road
+    step(s);
+    expect(s.event).toMatchObject({ id: "merchant", column: 0 });
+    const rations = col(s).rations;
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).rations).toBe(rations + R.MERCHANT_FOOD);
+    expect(s.treasury).toBe(100 - R.MERCHANT_FOOD_PRICE);
+  });
+
+  it("buys the sheep the column cannot use", () => {
+    const s = at("huairen");
+    col(s).sheep = 500;
+    orderMarch(s, 0, "yingzhou");
+    step(s);
+    expect(s.event?.id).toBe("merchant");
+    expect(chooseEvent(s, 1)).toBe(true);
+    expect(col(s).sheep).toBe(500 - R.MERCHANT_SHEEP);
+    expect(s.treasury).toBe(R.MERCHANT_SHEEP_PRICE);
+  });
+
+  it("does not come when the column has nothing to trade with", () => {
+    const s = at("huairen");
+    orderMarch(s, 0, "yingzhou");
+    step(s);
+    expect(s.event).toBeNull();
+  });
+});
+
+describe("the snowstorm", () => {
+  /** A column marching through a pass in the winter. */
+  function inPass(): GameState {
+    const s = at("shiling");
+    s.hour = 100 * 24; // December
+    orderMarch(s, 0, "taiyuan"); // the pass down to the plain
+    return s;
+  }
+
+  it("closes the pass: wait out the storm, or push through and lose men", () => {
+    const s = inPass();
+    step(s);
+    expect(s.event).toMatchObject({ id: "snow" });
+    const men = col(s).men, condition = col(s).condition;
+    expect(chooseEvent(s, 0)).toBe(true);
+    expect(col(s).men).toBeLessThan(men);
+    expect(col(s).condition).toBe(condition - R.SNOWSTORM_COLD);
+  });
+
+  it("waiting out the storm costs a day and nothing else", () => {
+    const s = inPass();
+    step(s);
+    const men = col(s).men;
+    expect(chooseEvent(s, 1)).toBe(true);
+    expect(col(s).restUntil).toBe(s.hour + 24);
+    expect(col(s).men).toBe(men);
+  });
+});
+
 describe("event saves", () => {
   it("a game with a pending event survives save and load", () => {
     const s = newGame();
