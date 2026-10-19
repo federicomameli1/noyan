@@ -442,18 +442,22 @@ function whyText(d: ConditionChange) {
     <dt><b>Yesterday</b></dt><dd><b>${signed(d.total)}</b></dd></dl>`;
 }
 
-/** The treasury, the remounts on the road and the ones waiting here, with the button to call more. */
+/** The treasury, the remounts on the road and the ones waiting here. */
 function treasuryText(c: Column) {
   const here = c.at ? game.sites[c.at].remounts : 0;
   const onRoad = game.remounts.reduce((n, r) => n + r.horses, 0);
   const parts = [`${fmt(game.treasury)} goods`];
   if (onRoad > 0) parts.push(`${fmt(onRoad)} remounts on the road`);
   if (here > 0) parts.push(`${fmt(here)} remounts waiting here`);
-  const afford = c.at && mongolGround(game, c.at) ? remountsAffordable(game) : 0;
-  const button = afford > 0
-    ? `<div class="seg"><button id="remounts" title="The khan's herds bring the horses in ${REMOUNT_DAYS} days">Call ${fmt(afford)} remounts: ${fmt(afford * HORSE_PRICE)} goods</button></div>`
-    : "";
-  return `<p class="note">${parts.join(" · ")}</p>${button}`;
+  return `<p class="note">${parts.join(" · ")}</p>`;
+}
+
+/** The button that calls the remounts, when the column stands where the herds can graze. */
+function remountButton(c: Column) {
+  if (!c.at || !mongolGround(game, c.at)) return "";
+  const n = remountsAffordable(game);
+  if (n <= 0) return "";
+  return `<button id="remounts" title="The khan's herds bring the horses in ${REMOUNT_DAYS} days">Call ${fmt(n)} remounts: ${fmt(n * HORSE_PRICE)} goods</button>`;
 }
 
 /** Dividing the column, and joining it with another standing at the same place. */
@@ -516,6 +520,7 @@ function renderColumn() {
         ${c.sheep > 0 ? `<button id="drop" ${c.at ? "" : "disabled"}>Leave flock</button>` : ""}
         ${c.sheep > 0 ? `<button id="slaughter" title="Half the meat spoils without time to dry it">Slaughter, +${fmt(c.sheep * RATIONS_PER_SHEEP * SLAUGHTER_SHARE)} rations</button>` : ""}
         ${flockHere > 0 ? `<button id="take">Take ${fmt(flockHere)} sheep</button>` : ""}
+        ${remountButton(c)}
       </div>
       ${herdersHere > 0 ? `<div class="seg" role="group" aria-label="Sheep from the herders" title="The allied herders give their sheep for free">
         ${herdersHere > 500 ? `<button data-herd="500">+500</button>` : ""}${herdersHere > 1000 ? `<button data-herd="1000">+1,000</button>` : ""}<button data-herd="all">All ${fmt(herdersHere)}</button>
