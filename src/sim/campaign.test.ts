@@ -28,12 +28,22 @@ describe("a whole campaign", () => {
     expect(s.log.some(l => l.text.startsWith("Victory"))).toBe(true);
   });
 
-  it("a watch of a thousand men cannot hold a walled city: the ground won is the ground kept", () => {
-    // the careful noyan leaves a watch of a thousand men in Taiyuan, and the Jin take it back
+  it("a watch of a thousand men behind the walls of Taiyuan holds against the beaten armies that come back", () => {
+    // the careful noyan leaves a watch in Taiyuan; the Jin armies it broke regroup and call on it, and are broken again
     const s = play("careful");
     const watch = s.columns.find(x => x.name.includes("detachment"));
     expect(watch).toBeDefined();
-    expect(s.cities.taiyuan.taken).toBe(false);
+    expect(s.cities.taiyuan.taken).toBe(true);
+  });
+
+  it("no beaten Jin army comes back to fight with a handful of men", () => {
+    // a broken army regroups before it marches again, and one with a fifth of its men disbands:
+    // no battle is fought at odds of a hundred to one
+    for (const policy of ["careful", "eager"]) {
+      const run = runGame({ policy, sheep: 6000 });
+      expect(run.battles.length).toBeGreaterThan(0);
+      expect(Math.max(...run.battles.map(b => b.ratio))).toBeLessThan(100);
+    }
   });
 
   it("the noyan who only marches and fights loses the campaign to the thaw", () => {

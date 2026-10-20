@@ -240,6 +240,10 @@ export const JIN_ATTACK_RATIO = 1.3;
 export const RAID_MIN_MEN = 100;
 /** a Jin army whose morale falls below this has had enough: it goes home [S] */
 export const JIN_RETREAT_MORALE = 30;
+/** a Jin army that has fallen back for lack of morale regroups at home: it gains this much a day, and marches again once it is back to what it set out with [S] */
+export const JIN_REGROUP_MORALE = 1;
+/** a Jin field army left with less than this share of the men it set out with is no longer an army: its survivors go into the garrison of its home [S] */
+export const JIN_DISBAND_SHARE = 1 / 5;
 /** a column can ride away from a Jin army only on horses in better condition than this [S] */
 export const REFUSE_MIN_CONDITION = 40;
 /** and less tired than this [S] */

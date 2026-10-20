@@ -16,6 +16,16 @@ describe("saves", () => {
     expect(b).toEqual(a);
   });
 
+  it("a save made before beaten armies could break takes what they set out with from the scenario", () => {
+    const save = makeSave(newGame(), 0);
+    const old = JSON.parse(JSON.stringify(save));
+    old.game.jin[0].foot = 2000;
+    for (const a of old.game.jin) { delete a.muster; delete a.broken; }
+    const army = readSave(old).game.jin[0];
+    expect(army.muster).toEqual(save.game.jin[0].muster);
+    expect(army.broken).toBe(false);
+  });
+
   it("the loaded game is a copy, not the saved object", () => {
     const save = makeSave(newGame(), 0);
     const loaded = readSave(save);

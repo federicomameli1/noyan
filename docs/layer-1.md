@@ -44,6 +44,15 @@ on them: the column takes rations (no more than it can carry) and grain for the
 horses, and the army goes hungry. A hungry army loses spirit and men every day,
 and goes home when its spirit breaks.
 
+**A beaten army.** An army whose spirit falls below 30, in battle or from hunger, is
+broken: it goes home and does nothing else there until its spirit has come back to
+what it set out with, one point a day. Then it takes the field again, with the men it
+has left: it does not get them back. An army left with a fifth of the men it set out
+with, or fewer, is no army at all: it disbands, and its survivors go into the garrison
+of its home if that is a walled town. Before this rule, broken armies kept coming back
+to Taiyuan with a few hundred men, then a few dozen, and the column won battles at a
+thousand to one.
+
 **The war effort.** As the campaign goes on the dynasty sends more armies from the
 south: a reserve army on 26 September, a northern host on 5 November. The siege of
 Taiyuan can be relieved more than once.
