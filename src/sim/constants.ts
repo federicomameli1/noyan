@@ -151,6 +151,11 @@ export const SIGHT_KM = { presence: 120, size: 60, full: 30 } as const;
 export const SIGHT_EXHAUSTED = 0.5;
 /** a Jin army notices a column this close, km [S] */
 export const JIN_SIGHT_KM = 40;
+/**
+ * A column and a Jin army this close, on the road or at a place, have met: the column can attack it, km [S].
+ * Both march about 5 km an hour, so two armies on the same road crossing each other are always caught within it.
+ */
+export const MEET_KM = 8;
 /** Jin horsemen hear of a flock left this far from them or from a Jin town, km [S] */
 export const JIN_FLOCK_SIGHT_KM = 60;
 /** days of food a relief army brings into the city it reaches [S] */

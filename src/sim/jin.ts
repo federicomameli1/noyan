@@ -125,6 +125,9 @@ export function sizeBand(men: number): "small" | "medium" | "large" {
 /** Position as (lon, lat), interpolated along the current leg. Same as for a column. */
 export const armyPosition = (a: JinArmy) => columnPosition(a);
 
+/** Where a battle with this army is fought: the place it stands at, or the one nearest to it on the road. */
+export const battleSite = (a: JinArmy): string => a.at ?? nearestSite(...armyPosition(a)).id;
+
 /** The town the Mongols hold at this place, if any. */
 const mongolTown = (s: GameState, id: string) => (s.cities[id]?.taken ? id : null);
 
@@ -138,7 +141,7 @@ export const isRelieved = (s: GameState, city: string) => s.jin.some(a => a.inCi
 export const knownArmyAt = (s: GameState, site: string) => !!armyAt(s, site) && armyAt(s, site)!.sight >= 2;
 
 /** Site nearest to a point. */
-function nearestSite(lon: number, lat: number): Site {
+export function nearestSite(lon: number, lat: number): Site {
   let best = graph.sites[0], d = Infinity;
   for (const x of graph.sites) {
     const k = distanceKm(lon, lat, x.lon, x.lat);
@@ -214,15 +217,44 @@ function updateSightings(s: GameState) {
 /** A column standing at a site: Jin armies do not march through it. */
 const columnAt = (s: GameState, site: string) => s.columns.some(c => c.at === site && c.men > 0);
 
-/** Sends an army to a site. If it is halfway along a link it first ends the link. False if there is no way. */
+/** km along a path of sites. */
+function pathKm(path: string[]): number {
+  let km = 0;
+  for (let i = 1; i < path.length; i++) km += graph.neighbours(path[i - 1]).find(n => n.to === path[i])!.link.km;
+  return km;
+}
+
+/**
+ * The shortest way for an army to a site, and its length in km. Halfway along a link it goes on,
+ * or turns back when that is shorter, as a column does: a rider does not finish a road to come back along it.
+ */
+function wayTo(s: GameState, a: JinArmy, dest: string): { turnBack: boolean; path: string[]; km: number } | null {
+  const avoid = (id: string) => columnAt(s, id);
+  if (!a.leg) {
+    const path = findPath(graph, a.at!, dest, avoid);
+    return path && { turnBack: false, path, km: pathKm(path) };
+  }
+  const l = a.leg;
+  // it does not turn back into a place where a column stands, unless that is where it is going
+  const ahead = findPath(graph, l.to, dest, avoid), back = avoid(l.from) && l.from !== dest ? null : findPath(graph, l.from, dest, avoid);
+  const aheadKm = ahead ? l.km - l.done + pathKm(ahead) : Infinity, backKm = back ? l.done + pathKm(back) : Infinity;
+  if (!ahead && !back) return null;
+  return backKm < aheadKm ? { turnBack: true, path: back!, km: backKm } : { turnBack: false, path: ahead!, km: aheadKm };
+}
+
+/** Sends an army to a site, turning back on the link it is on if that is shorter. False if there is no way. */
 function go(s: GameState, a: JinArmy, dest: string, order: JinOrder): boolean {
-  const from = a.at ?? a.leg!.to;
   a.order = order;
   a.target = dest;
-  if (from === dest) { a.route = []; return true; }
-  const path = findPath(graph, from, dest, id => columnAt(s, id));
-  if (!path) { a.route = []; a.order = "hold"; a.target = null; return false; }
-  a.route = path.slice(1);
+  if (a.at === dest) { a.route = []; return true; }
+  const way = wayTo(s, a, dest);
+  if (!way) { a.route = []; a.order = "hold"; a.target = null; return false; }
+  if (way.turnBack) {
+    const l = a.leg!;
+    a.leg = { from: l.to, to: l.from, done: l.km - l.done, km: l.km };
+  }
+  // the first site of the way is where the current leg ends, or where the army stands
+  a.route = way.path.slice(1);
   return true;
 }
 
@@ -438,12 +470,7 @@ function home(s: GameState, a: JinArmy): string {
 
 /** km by road from the army to a site, or Infinity if it cannot get there. */
 function roadKm(s: GameState, a: JinArmy, dest: string): number {
-  const from = a.at ?? a.leg!.to;
-  const path = findPath(graph, from, dest, id => columnAt(s, id));
-  if (!path) return Infinity;
-  let km = a.leg ? a.leg.km - a.leg.done : 0;
-  for (let i = 1; i < path.length; i++) km += graph.neighbours(path[i - 1]).find(n => n.to === path[i])!.link.km;
-  return km;
+  return wayTo(s, a, dest)?.km ?? Infinity;
 }
 
 function nearestByRoad(s: GameState, a: JinArmy, ids: string[]): string | null {
@@ -628,6 +655,8 @@ function decideRaiders(s: GameState, a: JinArmy) {
     return;
   }
   if (a.order === "raid" && a.target && (s.sites[a.target].sheep > 0 || s.sites[a.target].herders > 0) && !columnAt(s, a.target)) return;
+  // after a raid the horsemen ride home with what they took before they raid again
+  if (a.order === "return" && (a.leg || a.route.length)) return;
   const flock = nearestByRoad(s, a, knownFlocks(s, a));
   if (flock) { go(s, a, flock, "raid"); return; }
   const back = home(s, a);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { luck, mulberry32, resolveBattle } from "./battle";
 import { BATTLE_SEED, MONGOL_MORALE } from "./constants";
 import { armyForce, battleInput, battleOdds, canAttack, columnForce, escapeSite, fight, newGame, orderAttack, orderFight, orderRefuse, orderSiege, refuseBlock, reliefHelpers, sallyThreat, step, type GameState } from "./game";
-import { jinDecide } from "./jin";
+import { goHome, jinDecide } from "./jin";
 import { makeSave, readSave } from "./save";
 import { SCENARIO } from "./scenario";
 
@@ -80,6 +80,71 @@ describe("the player attacks", () => {
     expect(["defeat", "disaster"]).toContain(s.lastBattle!.result.outcome);
     expect(col(s).siege).toBeNull();
     expect(col(s).halted).toBe(true);
+  });
+});
+
+describe("a column meets a Jin army on the road", () => {
+  /** Muqali marches from Huozhou to Pingyang while the Pingyang army comes up the same road the other way. */
+  function crossing(): GameState {
+    const s = newGame();
+    Object.assign(col(s), { at: "huozhou", route: ["pingyang"], rations: 1e9 });
+    Object.assign(army(s), { at: "pingyang", leg: null, route: ["huozhou", "fenzhou"], order: "return", target: "fenzhou", sight: 3 });
+    return s;
+  }
+  const met = (s: GameState) => s.log.some(l => l.text.includes("comes upon the Pingyang army on the road"));
+  const untilMet = (s: GameState) => { for (let i = 0; i < 4 * 24 && !met(s); i++) step(s); };
+
+  it("the two do not pass through each other: the game stops, and the column can attack", () => {
+    const s = crossing();
+    untilMet(s);
+    expect(met(s)).toBe(true);
+    expect(s.log.find(l => l.text.includes("comes upon"))!.kind).toBe("alert");
+    expect(col(s).leg).not.toBeNull();
+    expect(army(s).at).toBeNull();
+    expect(canAttack(s, 0)).toBe(army(s));
+  });
+
+  it("the battle is fought on the ground of the nearest place", () => {
+    const s = crossing();
+    untilMet(s);
+    expect(orderAttack(s, 0)).toBe(true);
+    expect(["huozhou", "pingyang"]).toContain(s.lastBattle!.site);
+    expect(s.lastBattle!.attacker).toBe("mongol");
+  });
+
+  it("a column besieging a city does not meet the relief army on the road: it fights it at the walls", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "taiyuan", rations: 1e9 });
+    orderSiege(s, 0);
+    Object.assign(army(s), { at: null, leg: { from: "yuci", to: "taiyuan", done: 30, km: 34 }, route: [], order: "relieve", target: "taiyuan", sight: 3 });
+    expect(canAttack(s, 0)).toBeNull();
+  });
+});
+
+describe("a Jin army on the road", () => {
+  it("turns back halfway along a link when that is the shorter way, as a column does", () => {
+    const s = newGame();
+    // the frontier horse is 10 km out of the Yanmen pass on its way north: home to Xinzhou is back through the pass
+    Object.assign(horse(s), { at: null, leg: { from: "yanmen", to: "yingzhou", done: 10, km: 65 }, route: ["huairen"], order: "raid", target: "xijing-pastures" });
+    goHome(s, horse(s));
+    expect(horse(s).leg).toEqual({ from: "yingzhou", to: "yanmen", done: 55, km: 65 });
+    expect(horse(s).route).toEqual(["daizhou", "yuanping", "xinzhou"]);
+  });
+
+  it("does not turn back into a place where a column stands", () => {
+    const s = newGame(); // Muqali is at Datong
+    Object.assign(horse(s), { at: null, leg: { from: "datong", to: "huairen", done: 5, km: 41 }, route: [], order: "raid", target: "huairen" });
+    goHome(s, horse(s));
+    expect(horse(s).leg!.to).toBe("huairen");
+  });
+
+  it("raiders ride home after a raid before they raid again", () => {
+    const s = newGame();
+    Object.assign(col(s), { at: "pingyang", rations: 1e9 });
+    Object.assign(horse(s), { at: "huairen", leg: null, route: ["yingzhou", "yanmen", "daizhou", "yuanping", "xinzhou"], order: "return", target: "xinzhou" });
+    jinDecide(s);
+    expect(horse(s).order).toBe("return");
+    expect(horse(s).target).toBe("xinzhou");
   });
 });
 
