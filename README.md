@@ -18,7 +18,7 @@ Muqali's column (3,000 men, 4 horses each) starts at Datong on 1 September 1218 
 - Jin towns can be besieged. Waiting costs time and grass, storming costs men. Taken towns give food, grain for the horses and, from walled towns, engineers that halve later sieges.
 - You win by taking Taiyuan before 31 March 1219; you lose if spring comes first or the column falls below 1,000 men.
 
-The map fills the screen. Hover a place to see the route and how many days it takes, click it to march there. The game pauses by itself when the column arrives or something goes wrong (thin horses, food running out). Space pauses, 1 2 3 set the speed. At 1x a game day lasts 8 seconds. Every number of the rules is in `src/sim/constants.ts`, tagged as documented, modern estimate or game estimate.
+The map fills the screen. Hover a place to see the route and how many days it takes, click it to march there. The game pauses by itself when the column arrives or something goes wrong (thin horses, food running out). Space pauses, 1 2 3 set the speed. There are three speeds: a game day lasts 4 seconds at speed 1, 2 at speed 2 and 1 at speed 3. Every number of the rules is in `src/sim/constants.ts`, tagged as documented, modern estimate or game estimate.
 
 ## Layer 1: the war
 
