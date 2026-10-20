@@ -7,9 +7,10 @@ import type { ConditionBand } from "./game";
 import type { GameDate } from "./calendar";
 import type { Control, Terrain } from "./world";
 
-/** Real seconds per game day at 1x speed. */
+/** Real seconds per game day at a multiplier of 1 (not offered to the player). */
 export const SECONDS_PER_DAY = 8;
-export const SPEEDS = [1, 2, 4] as const;
+/** Time multipliers behind speeds 1, 2 and 3: a game day lasts 4, 2 and 1 seconds. */
+export const SPEEDS = [2, 4, 8] as const;
 
 export type PaceId = "grazing" | "normal" | "forced";
 

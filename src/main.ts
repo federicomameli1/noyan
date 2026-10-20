@@ -15,7 +15,7 @@ const graph = SCENARIO.graph;
 const fmt = (n: number) => Math.round(n).toLocaleString("en");
 const stage = $("stage"), info = $("info"), menu = $("menu");
 /** how fast the dashes of the planned route flow toward its end, in screen pixels per second */
-const ROUTE_FLOW = 20; // px per second at 1x
+const ROUTE_FLOW = 20; // px per second at a multiplier of 1
 
 /** replaces an element's content only when it changed, so buttons inside stay clickable while the game runs */
 function setHTML(el: HTMLElement, html: string): boolean {
@@ -99,11 +99,12 @@ $("begin").onclick = () => {
 
 // --- time ---
 const speeds = $("speeds");
-SPEEDS.forEach(v => {
+// the player sees speeds 1, 2 and 3, not the multipliers behind them
+SPEEDS.forEach((v, i) => {
   const b = document.createElement("button");
-  b.textContent = v + "×";
+  b.textContent = String(i + 1);
   b.dataset.speed = String(v);
-  b.setAttribute("aria-label", `Speed ${v}`);
+  b.setAttribute("aria-label", `Speed ${i + 1}`);
   b.onclick = () => { speed = v; setPlaying(true); };
   speeds.append(b);
 });
@@ -703,7 +704,7 @@ function render() {
   const d = dateOf(game);
   $("date").textContent = formatDate(d);
   if (game.over && $("end").hidden) showEnd();
-  $("clock-hour").textContent = game.over ? "The campaign is over" : `${String(d.hour).padStart(2, "0")}:00, ${playing ? `${speed}× speed` : "paused"}`;
+  $("clock-hour").textContent = game.over ? "The campaign is over" : `${String(d.hour).padStart(2, "0")}:00, ${playing ? `speed ${SPEEDS.indexOf(speed as typeof SPEEDS[number]) + 1}` : "paused"}`;
   $("play").textContent = playing ? "❚❚" : "▶";
   $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   speeds.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(playing && Number(b.dataset.speed) === speed)));
