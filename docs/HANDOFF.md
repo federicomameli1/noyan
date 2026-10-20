@@ -171,11 +171,14 @@ npm install
 npm run dev       # the dev server, with hot reload
 npm test          # the simulation tests, and the campaign report
 npm run build     # typecheck (both configs) and the production build into dist/
+npm run playtest -- help   # play the campaign headless: policies, batches, turn by turn
 ```
 
 Node 22 or later. `npm test` prints the campaign report at the end of the run: the
 careful noyan must win, the one who only marches and fights must lose. **That report is
 the instrument of the balance**: change a number, run the tests, read the two lines.
+For more than two lines, `npm run playtest -- batch` plays every scripted policy over ten
+seeds, and `run` or `turn` show one campaign closely; see `.claude/skills/playtest/SKILL.md`.
 
 **The git flow**: a feature branch, commits by topic, a pull request into `main`. The
 commits are written in the imperative and explain *why*, not *what*: the diff says what.
@@ -266,4 +269,5 @@ In the order I would take them up.
 | the rules of the war, in prose | `docs/layer-1.md` |
 | the design of layer 2 and the playtest diary | `docs/layer-2.md` |
 | the campaign and its report | `src/sim/campaign.test.ts` |
+| the playtest kit (policies, digests, turn-by-turn play) | `src/sim/playtest/`, `scripts/playtest.mjs` |
 | the saved games | `src/sim/save.ts`, `src/ui/saves.ts` |

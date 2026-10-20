@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.sim.json && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "playtest": "node scripts/playtest.mjs"
   },
   "devDependencies": {
     "@types/d3-delaunay": "^6.0.4",

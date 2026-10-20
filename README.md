@@ -49,6 +49,7 @@ npm install
 npm run dev        # dev server with hot reload
 npm test           # simulation tests (Vitest), with the campaign report
 npm run build      # type checks and production build into dist/
+npm run playtest -- batch   # headless playtests: every scripted policy over ten seeds
 ```
 
 `npm test` plays the whole campaign with two policies and prints the result of each: the
