@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dropFlock, newGame, orderMarch, orderRefuse, orderSiege, planRoute, siegeDays, step, type GameState } from "./game";
-import { armyAt, isRelieved, sightLevel } from "./jin";
+import { armyAt, armyMen, isRelieved, jinReserves, sightLevel } from "./jin";
 import { daysBetween } from "./calendar";
 import { SCENARIO } from "./scenario";
 
@@ -230,5 +230,64 @@ describe("a Jin army on the road", () => {
     const plan = planRoute(s, col(s), "taiyuan")!;
     expect(plan.sites).not.toContain("yuanping");
     expect(graph.site(plan.sites.at(-1)!).id).toBe("taiyuan");
+  });
+});
+
+describe("a beaten Jin army", () => {
+  it("that has lost its nerve goes home and stays there, even while the city it came to relieve is besieged", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    s.cities.taiyuan.besiegedDays = 30;
+    army(s).morale = 10;
+    days(s, 1);
+    expect(army(s).broken).toBe(true);
+    expect(army(s).at).toBe("pingyang");
+    expect(army(s).order).toBe("hold");
+    days(s, 10);
+    expect(army(s).order).toBe("hold");
+    expect(army(s).morale).toBeGreaterThan(10);
+  });
+
+  it("regroups at home: once its morale is back it marches again, with the men it has left", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    s.cities.taiyuan.besiegedDays = 30;
+    army(s).morale = 10;
+    army(s).foot = 3000;
+    days(s, 1);
+    expect(army(s).broken).toBe(true);
+    days(s, army(s).muster.morale - 10 + 1);
+    expect(army(s).broken).toBe(false);
+    expect(army(s).foot).toBe(3000);
+    expect(army(s).order).toBe("relieve");
+    expect(s.log.some(l => l.text.includes("has regrouped at Pingyang"))).toBe(true);
+  });
+
+  it("left with a fifth of its men or fewer disbands, and its convoys with it", () => {
+    const s = at("taiyuan");
+    orderSiege(s, 0);
+    army(s).foot = 1000;
+    army(s).horse = 500;
+    s.convoys.push({ at: "pingyang", leg: null, cameFrom: null, route: [], army: 0, food: 5 });
+    days(s, 1);
+    expect(army(s).foot + army(s).horse).toBe(0);
+    expect(s.convoys).toHaveLength(0);
+    expect(s.log.some(l => l.text.includes("The Pingyang army is no more: its last 1,500 men"))).toBe(true);
+  });
+
+  it("disbanding into a walled town adds its men to the garrison", () => {
+    const s = at("datong");
+    days(s, 0);
+    jinReserves(s);
+    s.hour = 70 * 24;
+    while (s.jin.length < 4) jinReserves(s);
+    const host = s.jin[3];
+    expect(host.home).toBe("fenzhou");
+    const garrison = s.cities.fenzhou.garrison;
+    host.foot = 500;
+    host.horse = 0;
+    days(s, 1);
+    expect(armyMen(host)).toBe(0);
+    expect(s.cities.fenzhou.garrison).toBe(garrison + 500);
   });
 });

@@ -62,11 +62,18 @@ export function readSave(data: unknown): SaveFile {
       || !Array.isArray(c.route) || !(c.at === null || SCENARIO.graph.sites.some(s => s.id === c.at))) fail("The save is damaged.");
   }
   // a field army must know its food: saves made before the Jin were supplied have none
-  for (const a of game.jin) {
+  for (const [i, a] of game.jin.entries()) {
     if (!isObject(a) || !isNumber(a.food)) fail("The save is damaged.");
     // the city an army relieves must be a city of the map, or the army breaks at midnight
     if (a.relieve !== undefined && (!isObject(a.relieve) || typeof a.relieve.city !== "string"
       || !SCENARIO.cities[a.relieve.city] || !isNumber(a.relieve.afterDays))) fail("The save is damaged.");
+    // saves made before a beaten army could break: what it set out with, from the scenario. The armies are
+    // kept in the order they took the field, the scenario's first and then its reserves, so the index finds it
+    if (!isObject(a.muster)) {
+      const spec = [...SCENARIO.jin, ...SCENARIO.jinReserves][i];
+      a.muster = { foot: spec.foot, horse: spec.horse, morale: spec.morale };
+    }
+    a.broken ??= false;
   }
   if (Object.values(game.sites).some(st => !isObject(st) || !isNumber(st.food) || !isNumber(st.hostility) || !isNumber(st.herders) || !isNumber(st.remounts))) fail("The save is damaged.");
   // a city knows the hour it fell and the goods it still holds

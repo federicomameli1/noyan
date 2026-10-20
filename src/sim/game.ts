@@ -11,7 +11,7 @@ import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { bootyOf, stepBooty } from "./booty";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
-import { armyAt, cityFalls, enterCity, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
+import { armyAt, cityFalls, enterCity, checkBroken, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export { log } from "./journal";
@@ -633,12 +633,14 @@ export function fight(s: GameState, ci: number, a: JinArmy, attacker: "mongol" |
 
   // who falls back: a beaten Jin army goes home, unless it won and kept its nerve
   const jinDone = b.r.outcome === "draw" || b.r.outcome === "victory" || b.r.outcome === "rout" || a.morale < R.JIN_RETREAT_MORALE;
-  if (jinDone) goHome(s, a);
-  else { a.order = "hold"; a.target = null; a.route = []; }
   const who = attacker === "mongol" ? `${c.name} attacks the ${a.name}` : `The ${a.name} attacks ${c.name}`;
   const aid = helpers ? `, with ${fmt(helpers)} men of the garrison,` : "";
   log(s, `${who}${aid} at ${site.name}: ${b.r.outcome}. ${c.name} loses ${fmt(b.menLost)} men and ${fmt(b.horsesLost)} horses; `
     + `the Jin lose ${fmt(b.footLost + b.horseLost)} and ${jinDone ? "fall back" : "hold the field"}.`, "alert");
+  if (jinDone) goHome(s, a);
+  else { a.order = "hold"; a.target = null; a.route = []; }
+  // one left with few men disbands, one that has lost its nerve regroups at home before it fights again
+  checkBroken(s, a);
   checkEnd(s);
   // a beaten enemy leaves horses loose on the field: the column can round them up
   if (!s.over && (b.r.outcome === "rout" || b.r.outcome === "victory") && c.men > 0) raiseEvent(s, "herd", ci, site.id);

@@ -56,6 +56,10 @@ export interface JinArmy {
   reported: number;
   /** days of food left: field armies eat their stores, raiders live off the land */
   food: number;
+  /** what it set out with: it disbands when it has lost most of these men, and regroups up to this morale */
+  muster: { foot: number; horse: number; morale: number };
+  /** fell back for lack of morale: it goes home and regroups there, and does nothing else until it has */
+  broken: boolean;
   /** the city this army goes to relieve, and after how many days of siege: kept in the state, so the army needs no name to be found */
   relieve?: { city: string; afterDays: number; orWhenTaken?: string };
 }
@@ -72,7 +76,7 @@ export function newJinArmy(j: JinArmySpec): JinArmy {
   return {
     name: j.name, kind: j.kind, foot: j.foot, horse: j.horse, quality: j.quality, morale: j.morale, kmPerDay: j.kmPerDay, home: j.home,
     at: j.home, leg: null, cameFrom: null, route: [], order: "hold", target: null, inCity: false, sight: 0, seen: null, reported: 0,
-    food: j.kind === "field" ? R.JIN_FOOD_DAYS : 0, relieve: j.relieve,
+    food: j.kind === "field" ? R.JIN_FOOD_DAYS : 0, muster: { foot: j.foot, horse: j.horse, morale: j.morale }, broken: false, relieve: j.relieve,
   };
 }
 
@@ -81,6 +85,37 @@ export function newJin(): JinArmy[] {
 }
 
 export const armyMen = (a: { foot: number; horse: number }) => a.foot + a.horse;
+
+/**
+ * After a battle, and every midnight: a field army left with too few men disbands, and one that has
+ * lost its nerve is broken until it regroups at home. Either way it no longer marches to relieve or attack.
+ */
+export function checkBroken(s: GameState, a: JinArmy) {
+  if (a.kind !== "field" || armyMen(a) <= 0) return;
+  if (armyMen(a) < armyMen(a.muster) * R.JIN_DISBAND_SHARE) disband(s, a);
+  else if (a.morale < R.JIN_RETREAT_MORALE) a.broken = true;
+}
+
+/** The army is no more: its survivors make their way home, into the garrison there if home is a walled town. */
+function disband(s: GameState, a: JinArmy) {
+  const men = armyMen(a), back = home(s, a);
+  const city = s.cities[back];
+  if (city && !city.taken) city.garrison += men;
+  a.foot = 0;
+  a.horse = 0;
+  a.order = "hold";
+  a.target = null;
+  a.route = [];
+  a.inCity = false;
+  // the news is out: the map no longer shows where it was last seen
+  a.seen = null;
+  // its wagons on the road turn back with it, and are no more either
+  s.convoys = s.convoys.filter(cv => s.jin[cv.army] !== a);
+  const where = graph.site(back).name;
+  log(s, city && !city.taken
+    ? `The ${a.name} is no more: its last ${fmt(men)} men make their way to ${where} and join its garrison.`
+    : `The ${a.name} is no more: its last ${fmt(men)} men straggle back to ${where}.`, "warning");
+}
 
 /** Size band, as scouts far away would put it. */
 export function sizeBand(men: number): "small" | "medium" | "large" {
@@ -461,6 +496,9 @@ export function jinDecide(s: GameState) {
   jinReserves(s);
   for (const a of s.jin) {
     if (armyMen(a) <= 0) continue;
+    checkBroken(s, a);
+    if (armyMen(a) <= 0) continue;
+    if (a.broken) { regroup(s, a); continue; }
     if (decideAttack(s, a)) continue;
     if (a.kind === "field") decideField(s, a);
     else decideRaiders(s, a);
@@ -533,6 +571,25 @@ export function enterCity(s: GameState, a: JinArmy, site: string) {
 export function goHome(s: GameState, a: JinArmy) {
   a.inCity = false;
   go(s, a, home(s, a), "return");
+}
+
+/**
+ * A broken army makes for home, and regroups once there: its spirit comes back a little every day,
+ * and when it is back to what it set out with the army takes the field again, with the men it has left.
+ */
+function regroup(s: GameState, a: JinArmy) {
+  const back = home(s, a);
+  if (a.at !== back || a.leg) {
+    if (a.order !== "return" || a.target !== back || !(a.leg || a.route.length)) goHome(s, a);
+    return;
+  }
+  a.order = "hold";
+  a.target = null;
+  a.morale = Math.min(a.muster.morale, a.morale + R.JIN_REGROUP_MORALE);
+  if (a.morale < a.muster.morale) return;
+  a.broken = false;
+  // news of a Jin army in good heart again reaches the Mongols, seen or not: it may come back
+  log(s, `Word comes that the ${a.name} has regrouped at ${graph.site(back).name}: ${fmt(armyMen(a))} men, ready to march again.`, "warning");
 }
 
 function decideField(s: GameState, a: JinArmy) {
