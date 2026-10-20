@@ -3,7 +3,7 @@ import {
   HERDERS_REGROW, HORSE_PRICE, DETACHMENT_MEN, MONTH_NAMES, PACES, RATIONS_PER_SHEEP, REMOUNT_DAYS, SIGHT_KM, SLAUGHTER_SHARE, SCENARIO, SECONDS_PER_DAY, SPEEDS, armyMen, campSite, canSplit, columnPosition, companionColumn, conditionBand, dateOf, distanceKm, dropFlock, effectivePace, DEFEAT_MEN,
   battleGround, battleInput, battleOdds, chooseEvent, eventView, forageBlock, forageDays, forageYield, goodsTaken, isArmy, mongolGround, orderForage, orderMerge, orderRemounts, orderSack, orderSplit, orderSurrender, population, remountsAffordable, slaughterFlock, type ForageKind, reliefHelpers, sallyMen, sallyThreat, blockadeMen, canAttack, canBesiege, escapeSite, orderFight, orderRefuse, refuseBlock, foodDays, leaveBlockade, sortieCost, forecast, formatDate, newGame, orderHalt, orderMarch, orderAttack, orderSiege, orderStorm, pastureDensity, planRoute, setPace, siegeDays, wallsOf,
   speedFactor, spoils, step, stormCost, stormFails, takeFlock, takeFromHerders, hasHerders, describeSave, makeSave, readSave, saveFileName,
-  describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
+  battleSite, describeOrder, describeSighting, isRelieved, sightingDate, sizeBand, type JinArmy,
   type BattleResult, type CityState, type Ground, type Column, type SaveFile, type ConditionBand, type ConditionChange, type Forecast, type GameState, type LogEntry, type PaceId, type Site,
   AIMS, aimMet, currentAim, dispatchTime, favourText, DISPATCHES,
 } from "./sim";
@@ -533,6 +533,9 @@ function renderColumn() {
   const flockHere = c.at ? game.sites[c.at].sheep : 0;
   const herdersHere = c.at ? game.sites[c.at].herders : 0;
   const blockade = blockadeMen(game, c);
+  // a Jin army met on the road has no place of its own to click on: the column panel offers the attack
+  const foe = canAttack(game, active);
+  const onRoad = foe && !foe.at ? foe : null;
   // where the horses will be in a week at this pace
   const week = cachedForecast(null, OUTLOOK_DAYS)?.days[6]?.condition;
   const changed = setHTML($("column"), `<div class="army-head"><span>Your army, ${game.columns.length === 1 ? "one column" : `${game.columns.length} columns`}</span>
@@ -562,6 +565,7 @@ function renderColumn() {
         ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}<small>${PACE_COST[p]}</small></button>`).join("")}
       </div>
       <div class="seg">
+        ${onRoad ? `<button id="attack-road" class="primary">Attack the ${onRoad.name}</button>` : ""}
         ${canBesiege(game, c) ? `<button id="siege" class="primary">Lay siege</button>` : ""}
         ${blockade !== null ? `<button id="blockade" title="Leave ${fmt(blockade)} men to besiege the city, so its garrison cannot sally out when the rest marches on">Blockade, −${fmt(blockade)} men</button>` : ""}
         ${besieged ? `<button id="storm" ${stormFails(c, besieged) ? "disabled title=\"Too few men to storm yet\"" : ""}>Storm, −${fmt(stormCost(besieged))} men</button>` : `<button id="halt" ${c.halted || (!c.leg && !c.route.length) ? "disabled" : ""}>Halt</button>`}
@@ -583,6 +587,7 @@ function renderColumn() {
   panel.querySelector<HTMLButtonElement>(".why")!.onclick = () => { showWhy = !showWhy; render(); };
   panel.querySelectorAll<HTMLButtonElement>("[data-col]").forEach(b => { b.onclick = () => selectColumn(Number(b.dataset.col)); });
   panel.querySelectorAll<HTMLButtonElement>("[data-pace]").forEach(b => { b.onclick = () => { setPace(game, active, b.dataset.pace as PaceId); render(); }; });
+  panel.querySelector<HTMLButtonElement>("#attack-road")?.addEventListener("click", () => { attackPreview = true; setPlaying(false); });
   panel.querySelector<HTMLButtonElement>("#halt")?.addEventListener("click", () => { orderHalt(game, active); render(); });
   panel.querySelector<HTMLButtonElement>("#siege")?.addEventListener("click", () => { orderSiege(game, active); setPlaying(true); });
   panel.querySelector<HTMLButtonElement>("#storm")?.addEventListener("click", storm);
@@ -899,7 +904,7 @@ function renderBattle() {
   const foe = attackPreview ? canAttack(game, active) : null;
   if (foe) {
     const c = col();
-    showBattle(`${c.name} at ${graph.site(foe.at!).name}`, `Attack the ${foe.name}?`, oddsHTML(c, foe),
+    showBattle(`${c.name} at ${graph.site(battleSite(foe)).name}`, `Attack the ${foe.name}?`, oddsHTML(c, foe),
       `<button class="primary big" id="b-attack">Attack</button><button class="big" id="b-cancel">Not now</button>`);
     $("b-attack").onclick = () => { attackPreview = false; orderAttack(game, active); render(); };
     $("b-cancel").onclick = () => { attackPreview = false; render(); };

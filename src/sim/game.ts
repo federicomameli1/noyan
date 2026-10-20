@@ -5,13 +5,13 @@
 import { addHours, daysBetween, formatDate, type GameDate } from "./calendar";
 import * as R from "./constants";
 import { luck, randomStep, resolveBattle, strength, type BattleInput, type BattleResult, type JinForce, type MongolForce } from "./battle";
-import { findPath, linkBetween, type Graph, type Site } from "./graph";
+import { distanceKm, findPath, linkBetween, type Graph, type Site } from "./graph";
 import { checkDispatches, currentAim, DISPATCHES } from "./goals";
 import { log, type LogEntry } from "./journal";
 import { cancelForage, countryDay, newCountry, stepForage, type ForageKind } from "./country";
 import { bootyOf, stepBooty } from "./booty";
 import { checkEvents, chooseEvent, lastChoice, raiseEvent, type EventId } from "./events";
-import { armyAt, cityFalls, enterCity, checkBroken, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
+import { armyAt, armyPosition, battleSite, cityFalls, enterCity, checkBroken, goHome, isRelieved, jinDecide, knownArmyAt, newJin, stepJin, armyMen, type Convoy, type JinArmy } from "./jin";
 import { SCENARIO, type ColumnSpec } from "./scenario";
 
 export { log } from "./journal";
@@ -567,14 +567,38 @@ export function armyForce(s: GameState, a: JinArmy): JinForce {
 /** Where a battle is fought: the pass itself, or the terrain around the place. */
 export const battleGround = (site: Site): R.Ground => (site.kind === "pass" ? "pass" : site.terrain);
 
-/** The Jin army this column can attack now: one standing with it, or barring its road. */
+/** A Jin army in the field, seen well enough, within reach of this column on the road: they have met. */
+export function metOnRoad(c: Column, a: JinArmy): boolean {
+  if (c.men <= 0 || armyMen(a) <= 0 || a.inCity || a.sight < 2) return false;
+  // both standing at places: an army at the column's place, or barring its road, is met there
+  if (c.at && a.at) return false;
+  // an army coming to the column's place meets it there: a relief army at the walls, an attack on the camp
+  if (c.siege || (c.at && a.target === c.at)) return false;
+  return distanceKm(...columnPosition(c), ...armyPosition(a)) <= R.MEET_KM;
+}
+
+/** The Jin army this column can attack now: one standing with it, barring its road, or met on the road. */
 export function canAttack(s: GameState, ci: number): JinArmy | null {
   const c = s.columns[ci];
   if (c.men <= 0) return null;
   const hittable = (a: JinArmy) => armyMen(a) > 0 && a.sight >= 2 && a.at !== null;
   return s.jin.find(a => hittable(a) && a.at === c.at)
     ?? s.jin.find(a => hittable(a) && c.waiting !== null && a.at === c.waiting)
+    ?? s.jin.find(a => metOnRoad(c, a))
     ?? null;
+}
+
+/** Pairs of a column and a Jin army that have met on the road, as "column:army". */
+const meetings = (s: GameState) => new Set(s.columns.flatMap((c, ci) => s.jin.flatMap((a, ai) => (metOnRoad(c, a) ? [`${ci}:${ai}`] : []))));
+
+/** Tells the player of a column that has just met a Jin army on the road: the game pauses, and the column may attack it. */
+function reportMeetings(s: GameState, before: Set<string>) {
+  for (const key of meetings(s)) {
+    if (before.has(key)) continue;
+    const [ci, ai] = key.split(":").map(Number);
+    const c = s.columns[ci], a = s.jin[ai];
+    log(s, `${c.name} comes upon the ${a.name} on the road near ${graph.site(battleSite(a)).name}: attack them now, or let them go.`, "alert");
+  }
 }
 
 /** The battle between a column and a Jin army, fought where the army stands, before luck. */
@@ -583,7 +607,7 @@ export function battleInput(s: GameState, c: Column, a: JinArmy, helpers = 0, wa
   return {
     mongol: { ...columnForce(c), walls },
     jin: { ...jin, foot: jin.foot + helpers },
-    ground: battleGround(graph.site(a.at ?? campSite(c).id)),
+    ground: battleGround(graph.site(battleSite(a))),
   };
 }
 
@@ -611,7 +635,7 @@ export function battleOdds(input: BattleInput): { even: BattleResult; best: Batt
 export function orderAttack(s: GameState, ci: number): boolean {
   const a = canAttack(s, ci);
   if (!a) return false;
-  fight(s, ci, a, "mongol");
+  fight(s, ci, a, "mongol", 0, 1, battleSite(a));
   return true;
 }
 
@@ -902,8 +926,10 @@ export function step(s: GameState) {
   // the player let time run without answering an event: it takes its last choice, the mildest
   if (s.event && s.event.hour < s.hour) chooseEvent(s, lastChoice(s));
   const hourOfDay = dateOf(s).hour;
+  const met = meetings(s);
   for (const c of s.columns) { stepForage(s, c); stepColumn(s, c, hourOfDay); }
   stepJin(s, hourOfDay);
+  reportMeetings(s, met);
   stepBooty(s);
   checkEvents(s);
   checkDispatches(s);
