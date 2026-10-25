@@ -112,6 +112,18 @@ describe("a column meets a Jin army on the road", () => {
     expect(s.lastBattle!.attacker).toBe("mongol");
   });
 
+  it("an army does not ride through a column's camp: it stops there, and the column can attack it", () => {
+    const s = newGame(); // Muqali camps at Datong
+    // the frontier horse comes back from the Xijing pastures on its way home, through Datong
+    Object.assign(horse(s), { at: null, leg: { from: "xijing-pastures", to: "datong", done: 80, km: 104 }, route: ["huairen", "yingzhou"], order: "return", target: "xinzhou", sight: 3 });
+    for (let i = 0; i < 20; i++) step(s);
+    expect(horse(s).at).toBe("datong");
+    expect(horse(s).route).toEqual([]);
+    // the scouts saw it coming on the road: the game stopped then, once
+    expect(s.log.filter(l => l.text.includes("comes upon the Jin frontier horse") && l.kind === "alert").length).toBe(1);
+    expect(canAttack(s, 0)).toBe(horse(s));
+  });
+
   it("a column besieging a city does not meet the relief army on the road: it fights it at the walls", () => {
     const s = newGame();
     Object.assign(col(s), { at: "taiyuan", rations: 1e9 });

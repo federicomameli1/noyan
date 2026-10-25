@@ -588,16 +588,25 @@ export function canAttack(s: GameState, ci: number): JinArmy | null {
     ?? null;
 }
 
-/** Pairs of a column and a Jin army that have met on the road, as "column:army". */
-const meetings = (s: GameState) => new Set(s.columns.flatMap((c, ci) => s.jin.flatMap((a, ai) => (metOnRoad(c, a) ? [`${ci}:${ai}`] : []))));
+/** A Jin army in sight that has stopped at the place where this column camps, without coming to fight it. */
+const inCamp = (c: Column, a: JinArmy) =>
+  c.men > 0 && armyMen(a) > 0 && !a.inCity && a.sight >= 2 && c.at !== null && a.at === c.at && !c.siege;
 
-/** Tells the player of a column that has just met a Jin army on the road: the game pauses, and the column may attack it. */
+/** Pairs of a column and a Jin army that have met, on the road or in the column's camp, as "column:army". */
+const meetings = (s: GameState) =>
+  new Set(s.columns.flatMap((c, ci) => s.jin.flatMap((a, ai) => (metOnRoad(c, a) || inCamp(c, a) ? [`${ci}:${ai}`] : []))));
+
+/** Tells the player of a column that has just met a Jin army: the game pauses, and the column may attack it. */
 function reportMeetings(s: GameState, before: Set<string>) {
   for (const key of meetings(s)) {
     if (before.has(key)) continue;
     const [ci, ai] = key.split(":").map(Number);
     const c = s.columns[ci], a = s.jin[ai];
-    log(s, `${c.name} comes upon the ${a.name} on the road near ${graph.site(battleSite(a)).name}: attack them now, or let them go.`, "alert");
+    // an army that came to fight the column has already put the question to the player
+    if (s.threat?.army === ai) continue;
+    log(s, inCamp(c, a)
+      ? `The ${a.name} runs into ${c.name}'s camp at ${graph.site(a.at!).name}: attack them now, or let them go.`
+      : `${c.name} comes upon the ${a.name} on the road near ${graph.site(battleSite(a)).name}: attack them now, or let them go.`, "alert");
   }
 }
 

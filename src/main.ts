@@ -564,8 +564,8 @@ function renderColumn() {
       <div class="pace" role="group" aria-label="Pace">
         ${(["grazing", "normal", "forced"] as const).map(p => `<button data-pace="${p}" aria-pressed="${p === pace}" ${c.sheep > 0 && p !== "grazing" ? "disabled" : ""}>${p[0].toUpperCase() + p.slice(1)}<small>${PACE_COST[p]}</small></button>`).join("")}
       </div>
+      ${onRoad ? `<div class="seg meet"><button id="attack-road" class="primary">Attack the ${onRoad.name}</button></div>` : ""}
       <div class="seg">
-        ${onRoad ? `<button id="attack-road" class="primary">Attack the ${onRoad.name}</button>` : ""}
         ${canBesiege(game, c) ? `<button id="siege" class="primary">Lay siege</button>` : ""}
         ${blockade !== null ? `<button id="blockade" title="Leave ${fmt(blockade)} men to besiege the city, so its garrison cannot sally out when the rest marches on">Blockade, −${fmt(blockade)} men</button>` : ""}
         ${besieged ? `<button id="storm" ${stormFails(c, besieged) ? "disabled title=\"Too few men to storm yet\"" : ""}>Storm, −${fmt(stormCost(besieged))} men</button>` : `<button id="halt" ${c.halted || (!c.leg && !c.route.length) ? "disabled" : ""}>Halt</button>`}
@@ -959,8 +959,12 @@ function frame(now: number) {
     while (acc >= MS_PER_HOUR && !game.over && playing) {
       acc -= MS_PER_HOUR;
       const before = game.log.length;
+      const foeBefore = canAttack(game, active);
       step(game);
       stepped = true;
+      // a Jin army met on the road or in camp: put the attack to the player at once, as a threat would be
+      const foe = canAttack(game, active);
+      if (foe && foe !== foeBefore && !game.threat && !game.event) { attackPreview = true; playing = false; break; }
       // stop at once on an arrival or an alert, so the player sees it when it happens
       if (game.log.slice(before).some(l => l.kind === "arrival" || l.kind === "alert")) break;
     }

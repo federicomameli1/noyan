@@ -119,7 +119,7 @@ button small { display: block; font: italic 13px/1.25 var(--f-body); opacity: .8
 .army-head { display: flex; justify-content: space-between; align-items: baseline; font: italic 14px var(--f-body); color: var(--muted); }
 .fold { border: 0; padding: 0 2px; font: italic 14px var(--f-body); color: var(--muted); text-decoration: underline dotted; }
 /* folded, the ledger keeps the columns, a line of numbers and the pace */
-.ledger.collapsed :is(.stats, .gauges, .why-list, .orders > :not(.pace), .says, .hint, .treasury, .extras) { display: none; }
+.ledger.collapsed :is(.stats, .gauges, .why-list, .orders > :not(.pace, .meet), .says, .hint, .treasury, .extras) { display: none; }
 .ledger.collapsed .compact { display: block; }
 .row { display: grid; grid-template-columns: 36px 1fr 74px; gap: 12px; align-items: center; padding: 8px 4px; border: 0; border-bottom: 1px dashed var(--ink-soft); text-align: left; font: inherit; width: 100%; }
 .row[aria-pressed="true"] { background: transparent; color: var(--ink); }
