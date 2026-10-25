@@ -292,6 +292,8 @@ export function stepJin(s: GameState, hourOfDay: number) {
       if (armyMen(a) <= 0 || (!a.leg && !a.route.length)) continue;
       advance(a, a.kmPerDay / R.JIN_MARCH_HOURS, (next, last) => canEnter(s, a, next, last), site => {
         if (!a.route.length) arrive(s, a, site);
+        // a column came to camp at this place while the army was on its way: it does not ride through the camp
+        else if (columnAt(s, site)) a.route = [];
       });
     }
   }
@@ -654,7 +656,7 @@ function decideRaiders(s: GameState, a: JinArmy) {
     if (to) go(s, a, to, "withdraw");
     return;
   }
-  if (a.order === "raid" && a.target && (s.sites[a.target].sheep > 0 || s.sites[a.target].herders > 0) && !columnAt(s, a.target)) return;
+  if (a.order === "raid" && a.target && (a.leg || a.route.length) && (s.sites[a.target].sheep > 0 || s.sites[a.target].herders > 0) && !columnAt(s, a.target)) return;
   // after a raid the horsemen ride home with what they took before they raid again
   if (a.order === "return" && (a.leg || a.route.length)) return;
   const flock = nearestByRoad(s, a, knownFlocks(s, a));
